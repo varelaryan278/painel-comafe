@@ -4,7 +4,8 @@ const nextConfig: NextConfig = {
   experimental: {
     agentFeedback: true,
   },
-  serverExternalPackages: ["@libsql/client", "libsql"],
+  // Gera .next/standalone: servidor Node enxuto para a imagem Docker.
+  output: "standalone",
   turbopack: {
     rules: {
       "*.css": {

@@ -1,0 +1,13 @@
+node_modules
+.next
+lib/generated
+data
+.git
+.gitignore
+.env
+.env.*
+!.env.example
+*.log
+.dockerignore
+README.md
+AGENTS.md
