@@ -21,22 +21,14 @@ COPY . .
 ENV DATABASE_URL="postgresql://build:build@localhost:5432/build"
 RUN npx prisma generate && npm run build
 
-# CLI do Prisma, só para aplicar as migrações quando o container sobe
-FROM base AS migrador
-WORKDIR /migrar
-RUN npm init -y && npm install --omit=dev --no-audit --no-fund prisma@7.10.1 dotenv@18
-COPY prisma ./prisma
-COPY prisma.config.ts ./
-
 # Imagem final
 FROM base AS runner
 ENV NODE_ENV=production PORT=3000 HOSTNAME=0.0.0.0
-COPY --from=migrador /migrar /migrar
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:3000/api/saude').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
-# Aplica as migrações pendentes do banco e sobe o servidor
-CMD cd /migrar && node node_modules/prisma/build/index.js migrate deploy && cd /app && exec node server.js
+# As migrações do banco NÃO rodam aqui: aplique com "npm run db:deploy" antes de publicar uma versão nova.
+CMD ["node", "server.js"]
