@@ -174,7 +174,7 @@ export default function Dashboard({ leads, anteriores, campanhas, vendedores, pe
         {kpis.map((k) => (
           <div key={k.label} className="card" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             <div style={{ fontSize: 13, color: "#5B6576", fontWeight: 500 }}>{k.label}</div>
-            <div className="display" style={{ fontSize: 30, fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{k.valor}</div>
+            <div className="display" style={{ fontSize: k.valor.length > 9 ? 25 : 30, fontWeight: 600, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{k.valor}</div>
             <div style={{ fontSize: 12, color: "#3B4556" }}>{k.sub}</div>
           </div>
         ))}
@@ -292,7 +292,7 @@ export default function Dashboard({ leads, anteriores, campanhas, vendedores, pe
               return <g key={i}><line x1={40} x2={590} y1={y} y2={y} stroke={i === 0 ? "#C9D1DE" : "#EEF1F5"} /><text x={32} y={y + 4} textAnchor="end" fontSize={11} fill="#5B6576">{t}</text></g>;
             })}
             {d.ticksX.map((i) => (
-              <text key={i} x={d.X(i)} y={182} textAnchor="middle" fontSize={11} fill="#5B6576">{d.dias[i]?.slice(8, 10)}/{d.dias[i]?.slice(5, 7)}</text>
+              <text key={i} x={d.X(i)} y={182} textAnchor={i === 0 ? "start" : i === d.dias.length - 1 ? "end" : "middle"} fontSize={11} fill="#5B6576">{d.dias[i]?.slice(8, 10)}/{d.dias[i]?.slice(5, 7)}</text>
             ))}
             {d.linhas.map((l) => (
               <polyline key={l.k} points={l.pts} fill="none" stroke={ADV[l.k].cor} strokeWidth={fonte === l.k ? 3 : 2} strokeLinejoin="round"

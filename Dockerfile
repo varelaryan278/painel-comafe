@@ -1,5 +1,5 @@
 # Painel Comafe — Next.js (standalone) + Prisma 7 + PostgreSQL
-# Easypanel: App › Fonte = este repositório › Build = Dockerfile › Porta 3000.
+# Easypanel: App › Fonte = este repositório › Build = Dockerfile › Porta 80 (a mesma da variável PORT).
 # As variáveis de ambiente (DATABASE_URL, REDIS_URL, BETTER_AUTH_*, KOMMO_*, META_*...) ficam na aba Ambiente do Easypanel.
 
 FROM node:22-bookworm-slim AS base
@@ -27,8 +27,8 @@ ENV NODE_ENV=production PORT=80 HOSTNAME=0.0.0.0
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
-EXPOSE 3000
+EXPOSE 80
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
-  CMD node -e "fetch('http://127.0.0.1:3000/api/saude').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+  CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||80)+'/api/saude').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 # As migrações do banco NÃO rodam aqui: aplique com "npm run db:deploy" antes de publicar uma versão nova.
 CMD ["node", "server.js"]

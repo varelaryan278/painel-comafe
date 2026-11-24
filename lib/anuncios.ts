@@ -82,6 +82,10 @@ export async function carregarAnuncios(de: number, ate: number, filtroAdv: AdvKe
       somar(nc, ncp);
       return { id: cp.id, nome: cp.nome, status: cp.effectiveStatus ?? cp.status, objetivo: cp.objetivo, tipo: regCamp?.tipo ?? null, conjuntos, n: ncp };
     });
+    // Campanhas, conjuntos e anúncios que mais trazem leads primeiro
+    const porLeads = <T extends { n: Numeros }>(a: T, b: T) => b.n.leads - a.n.leads || b.n.gasto - a.n.gasto;
+    campanhas.sort(porLeads);
+    for (const cp of campanhas) { cp.conjuntos.sort(porLeads); for (const st of cp.conjuntos) st.anuncios.sort(porLeads); }
     return {
       id: c.id, nome: c.nome, anunciante: c.anunciante as AdvKey, ultimaSync: c.ultimaSync ? Math.floor(c.ultimaSync.getTime() / 1000) : null,
       erro: c.erro, campanhas, n: nc,
@@ -100,6 +104,7 @@ export async function carregarAnuncios(de: number, ate: number, filtroAdv: AdvKe
   }
   const semVinculo = [...sv.values()].filter((x) => !filtroAdv || x.provavel === filtroAdv).sort((a, b) => b.leads - a.leads);
 
+  arvore.sort((a, b) => b.n.leads - a.n.leads);
   return { arvore, semVinculo };
 }
 
