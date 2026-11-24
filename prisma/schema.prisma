@@ -1,0 +1,278 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../lib/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------------------------------------------------------------------------
+// Better Auth (tabelas padrão + papel/anunciante do usuário)
+// ---------------------------------------------------------------------------
+model User {
+  id            String    @id
+  name          String
+  email         String    @unique
+  emailVerified Boolean   @default(false)
+  image         String?
+  role          String?   @default("gestor") // "admin" | "gestor"
+  anunciante    String? // "alex" | "marcos" | "matra" (só gestor)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  sessions      Session[]
+  accounts      Account[]
+
+  @@map("user")
+}
+
+model Session {
+  id        String   @id
+  expiresAt DateTime
+  token     String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  ipAddress String?
+  userAgent String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("session")
+}
+
+model Account {
+  id                    String    @id
+  accountId             String
+  providerId            String
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([userId])
+  @@map("account")
+}
+
+model Verification {
+  id         String   @id
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([identifier])
+  @@map("verification")
+}
+
+// ---------------------------------------------------------------------------
+// Cópia dos dados do Kommo (o painel só LÊ o CRM). Sem nome/telefone de cliente:
+// guarda só o DDD e um hash do telefone (para achar duplicados).
+// ---------------------------------------------------------------------------
+model Lead {
+  id                Int      @id
+  pipelineId        Int
+  statusId          Int
+  createdAt         DateTime
+  updatedAt         DateTime
+  closedAt          DateTime?
+  price             Int      @default(0)
+  responsibleUserId Int?
+  adId              String?
+  adsetId           String?
+  campaignId        String?
+  tags              String[]
+  lossReason        String?
+  stages            Int[] // etapas por onde o lead já passou
+  contactId         Int?
+  ddd               String?
+  phoneHash         String?
+  syncedAt          DateTime @default(now()) @updatedAt
+
+  @@index([createdAt])
+  @@index([campaignId])
+  @@index([adId])
+  @@index([phoneHash])
+  @@map("leads")
+}
+
+model KommoUser {
+  id   Int    @id
+  name String
+
+  @@map("kommo_users")
+}
+
+model KommoStatus {
+  id         Int    @id
+  pipelineId Int
+  name       String
+  sort       Int    @default(0)
+
+  @@map("kommo_statuses")
+}
+
+// ---------------------------------------------------------------------------
+// Cadastro feito pelos gestores: qual ID do Meta é de quem e se é motor/peça.
+// ---------------------------------------------------------------------------
+model MetaRegistro {
+  id         Int      @id @default(autoincrement())
+  nivel      String // "campanha" | "conjunto" | "anuncio"
+  metaId     String   @unique
+  nome       String
+  anunciante String // "alex" | "marcos" | "matra"
+  tipo       String // "motor" | "peca" | "misto" | "definir"
+  situacao   String   @default("ativa") // "ativa" | "pausada" | "encerrada"
+  createdBy  String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@map("meta_registros")
+}
+
+// Gestor pediu um ID que já é de outro anunciante → admin decide.
+model Disputa {
+  id         Int      @id @default(autoincrement())
+  metaId     String
+  anunciante String // quem está pedindo
+  userId     String?
+  status     String   @default("aberta") // "aberta" | "resolvida"
+  createdAt  DateTime @default(now())
+
+  @@index([status])
+  @@map("disputas")
+}
+
+model PublicLink {
+  token     String   @id
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  @@map("public_links")
+}
+
+model AuditLog {
+  id        Int      @id @default(autoincrement())
+  userId    String?
+  acao      String
+  detalhe   String?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+  @@map("audit_log")
+}
+
+model SyncState {
+  key   String @id
+  value String
+
+  @@map("sync_state")
+}
+
+// ---------------------------------------------------------------------------
+// Catálogo do Meta (lido pela Graph API com o usuário do sistema de cada anunciante).
+// A conta define o dono: tudo que roda numa conta é do anunciante daquele token.
+// ---------------------------------------------------------------------------
+model MetaConta {
+  id         String    @id // "act_123..."
+  nome       String
+  anunciante String // "alex" | "marcos" | "matra"
+  moeda      String?
+  status     Int?
+  ultimaSync DateTime?
+  erro       String?
+  conexaoId  Int? // conexão "Conectar com Facebook" que dá acesso a esta conta (null = token do .env)
+
+  @@map("meta_contas")
+}
+
+model MetaCampanha {
+  id              String    @id
+  contaId         String
+  nome            String
+  objetivo        String?
+  status          String?
+  effectiveStatus String?
+  criadoEm        DateTime?
+  syncedAt        DateTime  @default(now()) @updatedAt
+
+  @@index([contaId])
+  @@map("meta_campanhas")
+}
+
+model MetaConjunto {
+  id              String   @id
+  contaId         String
+  campanhaId      String
+  nome            String
+  status          String?
+  effectiveStatus String?
+  syncedAt        DateTime @default(now()) @updatedAt
+
+  @@index([campanhaId])
+  @@map("meta_conjuntos")
+}
+
+model MetaAnuncio {
+  id              String    @id
+  contaId         String
+  campanhaId      String
+  conjuntoId      String
+  nome            String
+  status          String?
+  effectiveStatus String?
+  criadoEm        DateTime?
+  atualizadoEm    DateTime?
+  criativoId      String?
+  thumbnail       String?
+  imagem          String?
+  videoId         String?
+  titulo          String?
+  texto           String?
+  syncedAt        DateTime  @default(now()) @updatedAt
+
+  @@index([contaId])
+  @@index([campanhaId])
+  @@index([conjuntoId])
+  @@map("meta_anuncios")
+}
+
+// Investimento diário por anúncio (Insights do Meta).
+model MetaGasto {
+  adId       String
+  data       String // AAAA-MM-DD
+  contaId    String
+  gasto      Float  @default(0)
+  impressoes Int    @default(0)
+  cliques    Int    @default(0)
+
+  @@id([adId, data])
+  @@index([data])
+  @@map("meta_gastos")
+}
+
+// Acesso dado por um usuário pelo botão "Conectar com Facebook" (popup OAuth).
+// O token fica criptografado (AES-256-GCM) e dura ~60 dias; o painel avisa para reconectar.
+model MetaConexao {
+  id                Int       @id @default(autoincrement())
+  userId            String // usuário do painel que conectou
+  fbUserId          String
+  fbNome            String
+  tokenCifrado      String
+  expiraEm          DateTime?
+  invalida          Boolean   @default(false)
+  contasDisponiveis Json      @default("[]") // [{ id, name }] que o Facebook liberou
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@unique([userId, fbUserId])
+  @@map("meta_conexoes")
+}
