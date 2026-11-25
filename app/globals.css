@@ -59,3 +59,29 @@ a:hover { color: var(--navy); }
 .linkbtn:hover { text-decoration: underline; }
 .btn:disabled, .pill:disabled, .linkbtn:disabled { opacity: .55; cursor: wait; }
 .aovivo { display: inline-flex; align-items: center; font-size: 12px; font-weight: 600; }
+.chip-x { width: 26px; height: 26px; border-radius: 50%; border: 0; background: #F1F3F7; color: #5B6576; font: 600 16px/1 var(--font-inter), sans-serif; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
+.chip-x:hover { background: #FDE3DF; color: #B42318; }
+
+/* ---------- relatório público: modo TV ---------- */
+.modo-tv { min-height: 100vh; }
+.modo-tv main { zoom: 1.12; }
+.modo-tv .tv-discreto { background: transparent; border-color: rgba(255,255,255,.35); color: #fff; height: 34px; }
+.modo-tv .tv-discreto:hover { border-color: #fff; }
+.so-print { display: none; }
+
+/* ---------- exportar PDF (impressão) com a identidade da Comafe ---------- */
+@media print {
+  @page { size: A4 landscape; margin: 10mm; }
+  html, body { background: #fff !important; }
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .no-print, nextjs-portal { display: none !important; }
+  .so-print { display: initial; }
+  footer.so-print { display: flex !important; }
+  .container { max-width: none; }
+  main { padding: 12px 0 !important; gap: 12px !important; }
+  .cabecalho-relatorio { border-radius: 10px; }
+  .card { break-inside: avoid; page-break-inside: avoid; box-shadow: none; }
+  .filtros .seg:not(.on) { display: none; }
+  table { break-inside: auto; }
+  tr { break-inside: avoid; }
+}

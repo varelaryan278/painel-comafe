@@ -314,3 +314,24 @@ export async function reatribuirConta(contaId: string, anunciante: string): Prom
   await aposMudarCadastro("meta");
   return { ok: true, msg: `Conta agora é de ${ADV[anunciante].nome}. Os leads foram recalculados.` };
 }
+
+/** Remove uma conta de anúncios do painel (e o catálogo e investimento importados dela). */
+export async function removerConta(contaId: string): Promise<Resultado> {
+  const u = await exigirUsuario();
+  const conta = await prisma.metaConta.findUnique({ where: { id: contaId } });
+  if (!conta) return { ok: false, msg: "Conta não encontrada." };
+  if (u.papel !== "admin") {
+    const cx = conta.conexaoId ? await prisma.metaConexao.findUnique({ where: { id: conta.conexaoId } }) : null;
+    if (!cx || cx.userId !== u.id) return { ok: false, msg: "Só quem conectou a conta (ou um admin) pode removê-la." };
+  }
+  await prisma.$transaction([
+    prisma.metaGasto.deleteMany({ where: { contaId } }),
+    prisma.metaAnuncio.deleteMany({ where: { contaId } }),
+    prisma.metaConjunto.deleteMany({ where: { contaId } }),
+    prisma.metaCampanha.deleteMany({ where: { contaId } }),
+    prisma.metaConta.delete({ where: { id: contaId } }),
+  ]);
+  await registrar(u, "meta_remover_conta", `${contaId} (${conta.nome})`);
+  await aposMudarCadastro("meta");
+  return { ok: true, msg: `Conta ${conta.nome} removida do painel. Os leads dela voltam a ser atribuídos pelos IDs cadastrados ou pela regra provisória.` };
+}

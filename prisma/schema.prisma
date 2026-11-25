@@ -95,6 +95,8 @@ model Lead {
   contactId         Int?
   ddd               String?
   phoneHash         String?
+  primeiraResposta  DateTime? // 1ª mensagem enviada por uma pessoa (não robô) no chat do lead
+  respondidoPor     Int? // usuário do Kommo que mandou essa mensagem
   syncedAt          DateTime @default(now()) @updatedAt
 
   @@index([createdAt])

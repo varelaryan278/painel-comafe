@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
-import { desconectarMeta, reatribuirConta, type Resultado } from "@/app/actions";
+import { desconectarMeta, reatribuirConta, removerConta, type Resultado } from "@/app/actions";
 import { ADV, ADV_KEYS, type AdvKey } from "@/lib/constantes";
 
 export type ConexaoView = {
@@ -84,7 +84,10 @@ export default function ConexoesMeta({ conexoes, appOk, isAdmin, contasEnv }: {
             </div>
             {c.contas.length === 0 ? <span className="muted" style={{ fontSize: 12 }}>Nenhuma conta escolhida. Clique em Reconectar para escolher.</span> : (
               <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                {c.contas.map((ct) => <ContaChip key={ct.id} conta={ct} isAdmin={isAdmin} pend={pend} onDono={(a) => rodar(() => reatribuirConta(ct.id, a))} />)}
+                {c.contas.map((ct) => (
+                  <ContaChip key={ct.id} conta={ct} isAdmin={isAdmin} pend={pend} onDono={(a) => rodar(() => reatribuirConta(ct.id, a))}
+                    onRemover={c.meu || isAdmin ? () => { if (window.confirm(`Remover a conta ${ct.nome} do painel? Campanhas, anúncios e investimento dela saem do painel (nada muda no Facebook). Dá para conectar de novo depois.`)) rodar(() => removerConta(ct.id)); } : undefined} />
+                ))}
               </div>
             )}
           </div>
@@ -101,7 +104,9 @@ export default function ConexoesMeta({ conexoes, appOk, isAdmin, contasEnv }: {
   );
 }
 
-function ContaChip({ conta, isAdmin, pend, onDono }: { conta: { id: string; nome: string; anunciante: string; erro: string | null }; isAdmin: boolean; pend: boolean; onDono: (a: string) => void }) {
+function ContaChip({ conta, isAdmin, pend, onDono, onRemover }: {
+  conta: { id: string; nome: string; anunciante: string; erro: string | null }; isAdmin: boolean; pend: boolean; onDono: (a: string) => void; onRemover?: () => void;
+}) {
   return (
     <span style={{ display: "inline-flex", alignItems: "center", gap: 8, border: "1px solid #E2E7EF", borderRadius: 999, padding: "4px 6px 4px 12px", fontSize: 13 }} title={conta.erro ?? conta.id}>
       <span className="dot" style={{ background: ADV[conta.anunciante as AdvKey]?.cor ?? "#8A94A6", marginRight: 0 }} />
@@ -113,6 +118,9 @@ function ContaChip({ conta, isAdmin, pend, onDono }: { conta: { id: string; nome
           {ADV_KEYS.map((k) => <option key={k} value={k}>{ADV[k].nome}</option>)}
         </select>
       ) : <span className="muted" style={{ fontSize: 12, paddingRight: 6 }}>{ADV[conta.anunciante as AdvKey]?.nome}</span>}
+      {onRemover && (
+        <button type="button" className="chip-x" disabled={pend} onClick={onRemover} aria-label={`Remover a conta ${conta.nome}`} title="Remover esta conta do painel">×</button>
+      )}
     </span>
   );
 }

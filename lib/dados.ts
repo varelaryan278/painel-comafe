@@ -21,7 +21,18 @@ export type LeadView = {
   pd: string | null; // motivo de perda
   k: string | null; // chave da campanha (id da campanha, ou do anúncio)
   h: string | null; // hash do telefone (duplicados)
+  fr: number | null; // segundos até a 1ª resposta de uma pessoa (null = ninguém respondeu)
+  hc: boolean; // chegou em horário comercial
 };
+
+/** Horário comercial (America/Sao_Paulo): seg–sex 8h–18h, sáb 8h–12h. */
+function emHorarioComercial(d: Date) {
+  const p = Object.fromEntries(new Intl.DateTimeFormat("en-US", { timeZone: TZ, weekday: "short", hour: "numeric", hour12: false }).formatToParts(d).map((x) => [x.type, x.value]));
+  const h = Number(p.hour) % 24;
+  if (p.weekday === "Sun") return false;
+  if (p.weekday === "Sat") return h >= 8 && h < 12;
+  return h >= 8 && h < 18;
+}
 
 export type CampanhaInfo = { nome: string; tipo: string | null; situacao: string | null; cadastrada: boolean };
 
@@ -110,6 +121,8 @@ export async function carregarLeads(de: number, ate: number, regs: Map<string, R
       w: l.statusId === ST.GANHO, l: l.statusId === ST.PERDIDO, nr: l.statusId === ST.NAO_RESPONDE,
       v: l.statusId === ST.GANHO ? l.price : 0, r: l.responsibleUserId, d: l.ddd, pd: l.statusId === ST.PERDIDO ? l.lossReason : null,
       k, h: l.phoneHash && l.phoneHash !== "sem-telefone" ? l.phoneHash : null,
+      fr: l.primeiraResposta ? Math.max(0, Math.round((l.primeiraResposta.getTime() - l.createdAt.getTime()) / 1000)) : null,
+      hc: emHorarioComercial(l.createdAt),
     };
   });
   return { leads, campanhas };

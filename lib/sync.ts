@@ -42,7 +42,7 @@ async function gravarEstado(key: string, value: string) {
   await prisma.syncState.upsert({ where: { key }, create: { key, value }, update: { value } });
 }
 
-export type ResultadoSync = { leads: number; etapas: number; contatos: number; inicio: number; fim: number };
+export type ResultadoSync = { leads: number; etapas: number; contatos: number; respostas: number; inicio: number; fim: number };
 
 /**
  * Busca no Kommo os leads do funil principal alterados desde a última execução
@@ -141,12 +141,41 @@ export async function sincronizar(opcoes: { completo?: boolean } = {}): Promise<
     }
   }
 
+  // 4) Primeira resposta de uma pessoa: mensagens enviadas no chat (created_by 0 = robô/automação, fica de fora)
+  const ultimoMsg = opcoes.completo ? null : await lerEstado("respostas_ate");
+  const desdeMsg = ultimoMsg ? Number(ultimoMsg) - 300 : desdePadrao;
+  const primeira = new Map<number, { t: number; u: number }>();
+  for (let page = 1; page < 5000; page++) {
+    const r = await kommo<{ _embedded: { events: { entity_id: number; entity_type: string; created_by: number; created_at: number }[] } }>(
+      `/events?limit=100&page=${page}&filter[type]=outgoing_chat_message&filter[created_at][from]=${desdeMsg}`,
+    );
+    const evs = r?._embedded?.events ?? [];
+    for (const e of evs) {
+      if (e.entity_type !== "lead" || !e.created_by) continue;
+      const atual = primeira.get(e.entity_id);
+      if (!atual || e.created_at < atual.t) primeira.set(e.entity_id, { t: e.created_at, u: e.created_by });
+    }
+    if (evs.length < 100) break;
+  }
+  let respostas = 0;
+  const comResposta = [...primeira.keys()];
+  for (let i = 0; i < comResposta.length; i += 500) {
+    const ls = await prisma.lead.findMany({ where: { id: { in: comResposta.slice(i, i + 500) } }, select: { id: true, primeiraResposta: true } });
+    for (const l of ls) {
+      const p = primeira.get(l.id)!;
+      if (l.primeiraResposta && l.primeiraResposta.getTime() <= p.t * 1000) continue;
+      await prisma.lead.update({ where: { id: l.id }, data: { primeiraResposta: data(p.t), respondidoPor: p.u } });
+      respostas++;
+    }
+  }
+
   const fim = Math.floor(Date.now() / 1000);
+  await gravarEstado("respostas_ate", String(inicio));
   await gravarEstado("leads_ate", String(inicio));
   await gravarEstado("eventos_ate", String(inicio));
   await gravarEstado("ultima_sync", String(fim));
-  if (alterados.length || etapas) await avisarAtualizacao("sync");
-  return { leads: alterados.length, etapas, contatos, inicio, fim };
+  if (alterados.length || etapas || respostas) await avisarAtualizacao("sync");
+  return { leads: alterados.length, etapas, contatos, respostas, inicio, fim };
 }
 
 export async function ultimaSync() {

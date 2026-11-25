@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ADV, ADV_KEYS, DDD_REGIAO, DDD_UF, ESTADOS_GRID, ETAPAS, NAVY, SEM, SIT_NOME, TIPO_NOME,
   fmt, money, pct, type AdvKey, type Situacao, type Tipo,
@@ -32,16 +32,51 @@ export type DashboardProps = {
   gastos?: GastoView[];
   gastosAnt?: GastoView[];
   publico?: boolean;
+  tv?: boolean; // modo TV: mostra uma tela por vez e troca sozinho
+};
+
+/** Telas do modo TV (cada seção do painel pertence a uma). */
+const TELAS = ["Resultados e funis", "Vendedores e atendimento", "Motor × peça e evolução", "Campanhas e localidade"];
+const TEMPO_TELA = 20_000;
+
+/** Duração legível: 45 s, 12 min, 3 h 05 min, 2 d 4 h. */
+export function duracao(s: number | null) {
+  if (s == null) return "—";
+  if (s < 60) return `${Math.round(s)} s`;
+  const m = Math.round(s / 60);
+  if (m < 60) return `${m} min`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h} h ${String(m % 60).padStart(2, "0")} min`;
+  return `${Math.floor(h / 24)} d ${h % 24} h`;
+}
+const mediana = (xs: number[]) => {
+  if (!xs.length) return null;
+  const o = [...xs].sort((a, b) => a - b), m = Math.floor(o.length / 2);
+  return o.length % 2 ? o[m] : (o[m - 1] + o[m]) / 2;
+};
+const RAPIDO = 15 * 60; // meta: responder em até 15 minutos
+type Atend = { base: number; resp: number; med: number | null; rapido: number; sem: number };
+const atendimento = (ls: LeadView[]): Atend => {
+  const base = ls.filter((l) => l.hc);
+  const tempos = base.filter((l) => l.fr != null).map((l) => l.fr!);
+  return { base: base.length, resp: tempos.length, med: mediana(tempos), rapido: tempos.filter((t) => t <= RAPIDO).length, sem: base.length - tempos.length };
 };
 
 const roas = (fat: number, gasto: number) => (gasto > 0 ? (fat / gasto).toLocaleString("pt-BR", { maximumFractionDigits: 1, minimumFractionDigits: 1 }) + "x" : "—");
 
 const dia = (s: number) => new Date(s * 1000).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
 
-export default function Dashboard({ leads, anteriores, campanhas, vendedores, periodo, ultimaSync, gastos = [], gastosAnt = [], publico = false }: DashboardProps) {
+export default function Dashboard({ leads, anteriores, campanhas, vendedores, periodo, ultimaSync, gastos = [], gastosAnt = [], publico = false, tv = false }: DashboardProps) {
   const [fonte, setFonte] = useState<FonteFiltro>("todos");
   const [tipo, setTipo] = useState<TipoFiltro>("todos");
   const [mapa, setMapa] = useState<"leads" | "fat">("leads");
+  const [tela, setTela] = useState(0);
+  useEffect(() => {
+    if (!tv) return;
+    const id = setInterval(() => setTela((t) => (t + 1) % TELAS.length), TEMPO_TELA);
+    return () => clearInterval(id);
+  }, [tv]);
+  const ver = (n: number) => !tv || tela === n;
 
   const filtrar = (ls: LeadView[], f: FonteFiltro) =>
     ls.filter((l) => (f === "todos" ? l.f !== "sem" : l.f === f) && (tipo === "todos" || l.t === tipo));
@@ -143,7 +178,32 @@ export default function Dashboard({ leads, anteriores, campanhas, vendedores, pe
     const dupExtras = [...contTel.values()].reduce((t, n) => t + Math.max(0, n - 1), 0);
     const dupCruzados = [...porTel.entries()].filter(([h, s]) => (contTel.get(h) ?? 0) > 1 && [...s].filter((x) => x !== "sem").length > 1).length;
 
-    return { gasto, gastoAnt, T, A, funis, semAnuncio, anuncio: anuncio.length, provisorio, semTipo, vend, maxV, porUf, maxUf, ddds, semDdd, dias, linhas, ticksX, ticksY, X, perdas, maxP, camps, dupPessoas, dupExtras, dupCruzados };
+    // atendimento (1ª resposta de uma pessoa, leads que chegaram em horário comercial)
+    const atTotal = atendimento(sel);
+    const atAdv = ADV_KEYS.map((k) => ({ k, a: atendimento(filtrar(leads, k)) }));
+    const amap = new Map<string, { nome: string; ls: LeadView[] }>();
+    for (const l of sel) {
+      const key = String(l.r ?? "x");
+      const it = amap.get(key) ?? { nome: l.r != null ? vendedores[l.r] ?? "Usuário removido" : "Sem responsável", ls: [] };
+      it.ls.push(l);
+      amap.set(key, it);
+    }
+    const atVend = [...amap.values()].map((v) => ({ nome: v.nome, a: atendimento(v.ls) })).filter((v) => v.a.base > 0)
+      .sort((a, b) => (a.a.med ?? Infinity) - (b.a.med ?? Infinity));
+    const atForaHorario = mediana(sel.filter((l) => !l.hc && l.fr != null).map((l) => l.fr!));
+
+    // motor × peça (respeita o anunciante, ignora o filtro de tipo)
+    const selF = leads.filter((l) => (fonte === "todos" ? l.f !== "sem" : l.f === fonte));
+    const gF = gastos.filter((g) => fonte === "todos" || g.f === fonte);
+    const porTipo = (["motor", "peca", "?"] as const).map((t) => {
+      const ls = selF.filter((l) => l.t === t);
+      return {
+        t, n: ls.length, ct: ls.filter((l) => l.ct).length, w: ls.filter((l) => l.w).length, fat: ls.reduce((s, l) => s + l.v, 0),
+        gasto: gF.filter((g) => g.t === t).reduce((s, g) => s + g.v, 0),
+      };
+    });
+
+    return { atTotal, atAdv, atVend, atForaHorario, porTipo, gasto, gastoAnt, T, A, funis, semAnuncio, anuncio: anuncio.length, provisorio, semTipo, vend, maxV, porUf, maxUf, ddds, semDdd, dias, linhas, ticksX, ticksY, X, perdas, maxP, camps, dupPessoas, dupExtras, dupCruzados };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [leads, anteriores, fonte, tipo, mapa, campanhas, vendedores, periodo, gastos, gastosAnt]);
 
@@ -179,7 +239,19 @@ export default function Dashboard({ leads, anteriores, campanhas, vendedores, pe
         </div>
       )}
 
-      <div className="card" style={{ display: "flex", flexWrap: "wrap", alignItems: "flex-end", gap: "16px 24px" }}>
+      {tv && (
+        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+          <h2 className="display" style={{ fontSize: 26, margin: 0, color: NAVY }}>{TELAS[tela]}</h2>
+          <div style={{ display: "flex", gap: 6, marginLeft: "auto" }} aria-label={`Tela ${tela + 1} de ${TELAS.length}`}>
+            {TELAS.map((t, i) => (
+              <button key={t} type="button" onClick={() => setTela(i)} title={t} aria-label={t}
+                style={{ width: i === tela ? 34 : 12, height: 12, borderRadius: 999, border: 0, cursor: "pointer", background: i === tela ? NAVY : "#C9D1DE", transition: "width .3s" }} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="card filtros" style={{ display: tv ? "none" : "flex", flexWrap: "wrap", alignItems: "flex-end", gap: "16px 24px" }}>
         <div className="field">Anunciante<Seg<FonteFiltro> label="Anunciante" options={fontes} value={fonte} onChange={setFonte} dots={DOTS} /></div>
         <div className="field">Tipo<Seg<TipoFiltro> label="Tipo" options={[["todos", "Peça e motor"], ["motor", "Motor"], ["peca", "Peça"]]} value={tipo} onChange={setTipo} /></div>
         <p className="muted" style={{ marginLeft: "auto", fontSize: 12 }}>
@@ -187,7 +259,7 @@ export default function Dashboard({ leads, anteriores, campanhas, vendedores, pe
         </p>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 16 }}>
+      {ver(0) && <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 16 }}>
         {kpis.map((k) => (
           <div key={k.label} className="card" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             <div style={{ fontSize: 13, color: "#5B6576", fontWeight: 500 }}>{k.label}</div>
@@ -195,12 +267,12 @@ export default function Dashboard({ leads, anteriores, campanhas, vendedores, pe
             <div style={{ fontSize: 12, color: "#3B4556" }}>{k.sub}</div>
           </div>
         ))}
-      </div>
+      </div>}
       {tipo !== "todos" && d.semTipo === 0 && leads.some((l) => l.t === "?") && (
         <p className="muted" style={{ marginTop: -8 }}>Leads sem tipo definido (sem cadastro e sem tag peça/motor) ficam fora deste filtro.</p>
       )}
 
-      <section className="card" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      {ver(0) && <section className="card" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
         <div style={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", gap: "8px 16px" }}>
           <h2 className="h2">Funil por anunciante</h2>
           <p className="muted">Cada etapa conta os leads que já passaram por ela. Dentro: quantidade e % que seguiu da etapa anterior.</p>
@@ -222,10 +294,10 @@ export default function Dashboard({ leads, anteriores, campanhas, vendedores, pe
         <p className="muted" style={{ fontSize: 12 }}>
           Fora dos funis: <strong>{fmt(d.semAnuncio)}</strong> leads sem anúncio identificado (contato direto, indicação ou anúncio que o Kommo não registrou).
         </p>
-      </section>
+      </section>}
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(440px, 100%), 1fr))", gap: 20 }}>
-        <section className="card" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        {ver(1) && <section className="card" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
           <div>
             <h2 className="h2">Vendas por vendedor</h2>
             <p className="muted" style={{ marginTop: 4 }}>Barra = leads recebidos, dividida pela cor do anunciante</p>
@@ -257,9 +329,85 @@ export default function Dashboard({ leads, anteriores, campanhas, vendedores, pe
               </table>
             </div>
           )}
-        </section>
+        </section>}
 
-        <section className="card" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        {ver(1) && <section className="card" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          <div>
+            <h2 className="h2">Tempo da primeira resposta</h2>
+            <p className="muted" style={{ marginTop: 4 }}>
+              Do lead entrar até a 1ª mensagem de uma pessoa (o robô não conta). Só leads que chegaram em horário comercial: seg a sex 8h–18h, sáb 8h–12h.
+            </p>
+          </div>
+          {d.atTotal.base === 0 ? <Vazio /> : (<>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "12px 32px" }}>
+              <Stat valor={duracao(d.atTotal.med)} rotulo="tempo mediano" />
+              <Stat valor={pct(d.atTotal.rapido, d.atTotal.base)} rotulo="respondidos em até 15 min" cor={d.atTotal.rapido / d.atTotal.base >= 0.7 ? "#146C3A" : "#B42318"} />
+              <Stat valor={fmt(d.atTotal.sem)} rotulo="sem resposta de uma pessoa" />
+              <Stat valor={duracao(d.atForaHorario)} rotulo="mediana fora do horário" />
+            </div>
+            {fonte === "todos" && (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 10 }}>
+                {d.atAdv.map(({ k, a }) => (
+                  <div key={k} style={{ border: "1px solid #E2E7EF", borderRadius: 10, padding: "8px 10px", fontSize: 12 }}>
+                    <div style={{ fontWeight: 600 }}><span className="dot" style={{ background: ADV[k].cor }} />{ADV[k].nome}</div>
+                    <div className="display" style={{ fontSize: 18, fontWeight: 600, marginTop: 2 }}>{duracao(a.med)}</div>
+                    <div className="muted" style={{ fontSize: 11 }}>{pct(a.rapido, a.base)} em até 15 min</div>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div style={{ overflowX: "auto" }}>
+              <table className="tbl" style={{ minWidth: 420 }}>
+                <thead><tr><th>Vendedor</th><th className="num">Leads</th><th className="num">Mediana</th><th className="num">Até 15 min</th><th className="num">Sem resposta</th></tr></thead>
+                <tbody>
+                  {d.atVend.slice(0, tv ? 8 : 50).map((v) => (
+                    <tr key={v.nome}>
+                      <td style={{ fontWeight: 600, whiteSpace: "nowrap" }}>{v.nome}</td>
+                      <td className="num">{fmt(v.a.base)}</td>
+                      <td className="num" style={{ fontWeight: 600 }}>{duracao(v.a.med)}</td>
+                      <td className="num">{pct(v.a.rapido, v.a.base)}</td>
+                      <td className="num">{fmt(v.a.sem)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>)}
+        </section>}
+
+        {ver(2) && <section className="card" style={{ display: "flex", flexDirection: "column", gap: 14, gridColumn: "1 / -1" }}>
+          <div>
+            <h2 className="h2">Motor × peça</h2>
+            <p className="muted" style={{ marginTop: 4 }}>Resultado de cada tipo de campanha{fonte !== "todos" && fonte !== "sem" ? ` de ${ADV[fonte].nome}` : ""} · tipo marcado pelo gestor (ou pela tag do robô)</p>
+          </div>
+          <div style={{ overflowX: "auto" }}>
+            <table className="tbl" style={{ minWidth: 860 }}>
+              <thead><tr><th>Tipo</th><th className="num">Leads</th><th className="num">Cotações</th><th className="num">Vendas</th><th className="num">Conversão</th><th className="num">Faturamento</th><th className="num">Ticket médio</th>
+                {gastos.length > 0 && <><th className="num">Investido</th><th className="num">Custo/lead</th><th className="num">Custo/venda</th><th className="num">ROAS</th></>}</tr></thead>
+              <tbody>
+                {d.porTipo.map((r) => (
+                  <tr key={r.t}>
+                    <td>{r.t === "?" ? <span className="muted">Sem tipo definido</span> : <span className="pill" style={{ ...TIPO_STYLE[r.t], cursor: "default" }}>{TIPO_NOME[r.t as Tipo]}</span>}</td>
+                    <td className="num">{fmt(r.n)}</td>
+                    <td className="num">{fmt(r.ct)}</td>
+                    <td className="num">{fmt(r.w)}</td>
+                    <td className="num">{pct(r.w, r.n)}</td>
+                    <td className="num" style={{ fontWeight: 600 }}>{money(r.fat)}</td>
+                    <td className="num">{r.w ? money(r.fat / r.w) : "—"}</td>
+                    {gastos.length > 0 && <>
+                      <td className="num">{r.gasto ? money(r.gasto) : "—"}</td>
+                      <td className="num">{r.gasto && r.n ? money(r.gasto / r.n) : "—"}</td>
+                      <td className="num">{r.gasto && r.w ? money(r.gasto / r.w) : "—"}</td>
+                      <td className="num" style={{ fontWeight: 600, color: r.gasto && r.fat >= r.gasto ? "#146C3A" : undefined }}>{roas(r.fat, r.gasto)}</td>
+                    </>}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>}
+
+        {ver(3) && <section className="card" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
           <div style={{ display: "flex", flexWrap: "wrap", alignItems: "flex-start", gap: "8px 16px" }}>
             <div>
               <h2 className="h2">Mapa por localidade</h2>
@@ -294,9 +442,9 @@ export default function Dashboard({ leads, anteriores, campanhas, vendedores, pe
               {mapa === "leads" && d.semDdd > 0 && <p className="muted" style={{ fontSize: 11, marginTop: 8 }}>{fmt(d.semDdd)} leads sem telefone brasileiro identificado.</p>}
             </div>
           </div>
-        </section>
+        </section>}
 
-        <section className="card" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {ver(2) && <section className="card" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           <div style={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", gap: "8px 16px" }}>
             <h2 className="h2">Leads por dia</h2>
             <div style={{ display: "flex", gap: 14, fontSize: 12, color: "#3B4556", marginLeft: "auto" }}>
@@ -316,9 +464,9 @@ export default function Dashboard({ leads, anteriores, campanhas, vendedores, pe
                 opacity={fonte === "todos" || fonte === l.k ? 1 : 0.18} />
             ))}
           </svg>
-        </section>
+        </section>}
 
-        <section className="card" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        {ver(2) && <section className="card" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           <div>
             <h2 className="h2">Motivos de perda</h2>
             <p className="muted" style={{ marginTop: 4 }}>Leads em Fechado - perdido, pelo motivo escolhido no Kommo</p>
@@ -330,10 +478,10 @@ export default function Dashboard({ leads, anteriores, campanhas, vendedores, pe
               <span className="num">{fmt(v)}</span>
             </div>
           ))}
-        </section>
+        </section>}
       </div>
 
-      <section className="card" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      {ver(3) && <section className="card" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         <div>
           <h2 className="h2">Campanhas e anúncios</h2>
           <p className="muted" style={{ marginTop: 4 }}>Nome, tipo e situação vêm do cadastro feito pelo gestor de tráfego</p>
@@ -343,7 +491,7 @@ export default function Dashboard({ leads, anteriores, campanhas, vendedores, pe
             <table className="tbl" style={{ minWidth: 980 }}>
               <thead><tr><th>Campanha / anúncio</th><th>Anunciante</th><th>Tipo</th><th>Situação</th><th className="num">Leads</th><th className="num">Vendas</th><th className="num">Faturamento</th>{gastos.length > 0 && <><th className="num">Investido</th><th className="num">Custo/lead</th><th className="num">ROAS</th></>}</tr></thead>
               <tbody>
-                {d.camps.map((c) => (
+                {d.camps.slice(0, tv ? 8 : 25).map((c) => (
                   <tr key={c.k}>
                     <td style={{ fontWeight: 500 }}>
                       {c.info?.nome ?? c.k}
@@ -366,9 +514,9 @@ export default function Dashboard({ leads, anteriores, campanhas, vendedores, pe
             </table>
           </div>
         )}
-      </section>
+      </section>}
 
-      <section className="card" style={{ display: "flex", flexWrap: "wrap", gap: "12px 32px", alignItems: "center" }}>
+      {!tv && <section className="card" style={{ display: "flex", flexWrap: "wrap", gap: "12px 32px", alignItems: "center" }}>
         <div>
           <h2 className="h2">Leads que entraram mais de uma vez</h2>
           <p className="muted" style={{ marginTop: 4 }}>Mesma pessoa (mesmo telefone) no período, em qualquer anunciante</p>
@@ -378,7 +526,7 @@ export default function Dashboard({ leads, anteriores, campanhas, vendedores, pe
           <Num valor={d.dupExtras} rotulo="leads a mais" />
           <Num valor={d.dupCruzados} rotulo="vieram por 2+ anunciantes" />
         </div>
-      </section>
+      </section>}
     </div>
   );
 }
@@ -387,6 +535,15 @@ function Num({ valor, rotulo }: { valor: number; rotulo: string }) {
   return (
     <div>
       <div className="display" style={{ fontSize: 24, fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{fmt(valor)}</div>
+      <div style={{ fontSize: 12, color: "#5B6576" }}>{rotulo}</div>
+    </div>
+  );
+}
+
+function Stat({ valor, rotulo, cor }: { valor: string; rotulo: string; cor?: string }) {
+  return (
+    <div>
+      <div className="display" style={{ fontSize: 24, fontWeight: 600, fontVariantNumeric: "tabular-nums", color: cor }}>{valor}</div>
       <div style={{ fontSize: 12, color: "#5B6576" }}>{rotulo}</div>
     </div>
   );
