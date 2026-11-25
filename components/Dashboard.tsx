@@ -144,8 +144,10 @@ export default function Dashboard({ leads, anteriores, campanhas, vendedores, pe
     for (let s = periodo.de; s < periodo.ate; s += 86400) dias.push(dia(s + 43200));
     const porDia = Object.fromEntries(ADV_KEYS.map((k) => [k, new Map<string, number>()])) as Record<AdvKey, Map<string, number>>;
     for (const l of leads) {
-      if (l.x || l.f === "sem" || (tipo !== "todos" && l.t !== tipo)) continue;
-      const m = porDia[l.f as AdvKey]; const k = dia(l.c);
+      // uma linha por anunciante: "por fora" e "anúncio sem ID" não têm dono, ficam fora deste gráfico
+      const m = porDia[l.f as AdvKey];
+      if (!m || l.x || (tipo !== "todos" && l.t !== tipo)) continue;
+      const k = dia(l.c);
       m.set(k, (m.get(k) ?? 0) + 1);
     }
     const maxDia = Math.max(5, ...ADV_KEYS.flatMap((k) => dias.map((x) => porDia[k].get(x) ?? 0)));
