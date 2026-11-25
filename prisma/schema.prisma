@@ -93,6 +93,7 @@ model Lead {
   lossReason        String?
   stages            Int[] // etapas por onde o lead já passou
   contactId         Int?
+  sourceId          Int? // origem no Kommo (canal de WhatsApp); null = lead criado à mão
   ddd               String?
   phoneHash         String?
   primeiraResposta  DateTime? // 1ª mensagem enviada por uma pessoa (não robô) no chat do lead

@@ -1,7 +1,8 @@
 // Constantes compartilhadas entre servidor e navegador (sem segredos).
 
 export type AdvKey = "alex" | "marcos" | "matra";
-export type Fonte = AdvKey | "sem";
+// "nid" = entrou pelo WhatsApp (anúncio) mas sem ID do anúncio; "sem" = lead criado à mão (venda por fora)
+export type Fonte = AdvKey | "nid" | "sem";
 export type Tipo = "motor" | "peca" | "misto" | "definir";
 export type TipoLead = "motor" | "peca" | "?";
 export type Situacao = "ativa" | "pausada" | "encerrada";
@@ -14,7 +15,8 @@ export const ADV: Record<AdvKey, { nome: string; cor: string }> = {
   marcos: { nome: "Marcos", cor: "#B4501A" },
   matra: { nome: "Matra", cor: "#0F7F6E" },
 };
-export const SEM = { nome: "Sem anúncio identificado", cor: "#8A94A6" };
+export const SEM = { nome: "Sem anúncio (venda por fora)", cor: "#8A94A6" };
+export const NID = { nome: "Anúncio (sem ID)", cor: "#6B4FA8" };
 
 export const TIPO_NOME: Record<Tipo, string> = { motor: "Motor", peca: "Peça", misto: "Misto", definir: "Definir" };
 export const SIT_NOME: Record<Situacao, string> = { ativa: "Ativa", pausada: "Pausada", encerrada: "Encerrada" };

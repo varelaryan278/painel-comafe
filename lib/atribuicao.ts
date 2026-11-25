@@ -1,14 +1,14 @@
 import type { AdvKey, Fonte, Situacao, Tipo, TipoLead } from "./constantes";
 
 export type RegistroMin = { metaId: string; nivel: string; nome: string; anunciante: string; tipo: string; situacao: string };
-export type LeadMin = { adId: string | null; adsetId: string | null; campaignId: string | null; tags: string[] };
+export type LeadMin = { adId: string | null; adsetId: string | null; campaignId: string | null; tags: string[]; sourceId?: number | null };
 
 export type Atribuicao = {
   fonte: Fonte;
   provisorio: boolean; // true = regra do final do ID / tag, sem cadastro de gestor
   tipo: TipoLead;
   registro: RegistroMin | null; // cadastro do gestor (anúncio > conjunto > campanha)
-  origem: "meta" | "cadastro" | "sufixo" | "tag" | "nenhuma";
+  origem: "meta" | "cadastro" | "sufixo" | "tag" | "canal" | "nenhuma";
 };
 
 /** Regra antiga (provisória): final do ID do anúncio do Meta. */
@@ -48,6 +48,9 @@ export function atribuir(lead: LeadMin, regs: Map<string, RegistroMin>, donosMet
   if (lead.adId) return { fonte: advPeloSufixo(lead.adId), provisorio: true, tipo, registro: null, origem: "sufixo" };
   const porTag = advPelasTags(lead.tags);
   if (porTag) return { fonte: porTag, provisorio: true, tipo, registro: null, origem: "tag" };
+  // entrou por um canal (WhatsApp) sem ID do anúncio: conta como anúncio, sem saber de quem
+  if (lead.sourceId) return { fonte: "nid", provisorio: false, tipo, registro: null, origem: "canal" };
+  // criado à mão pelo vendedor: venda por fora
   return { fonte: "sem", provisorio: false, tipo, registro: null, origem: "nenhuma" };
 }
 

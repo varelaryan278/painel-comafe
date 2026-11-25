@@ -105,7 +105,7 @@ export async function carregarLeads(de: number, ate: number, regs: Map<string, R
   const nomeMeta = new Map([...nomesCamp, ...nomesAd].map((x) => [x.id, x]));
   const campanhas: Record<string, CampanhaInfo> = {};
   const leads: LeadView[] = rows.map((l) => {
-    const a = atribuir({ adId: l.adId, adsetId: l.adsetId, campaignId: l.campaignId, tags: l.tags }, regs, donos);
+    const a = atribuir({ adId: l.adId, adsetId: l.adsetId, campaignId: l.campaignId, tags: l.tags, sourceId: l.sourceId }, regs, donos);
     const st = new Set<number>(l.stages);
     st.add(l.statusId);
     const has = (lista: number[]) => lista.some((x) => st.has(x));

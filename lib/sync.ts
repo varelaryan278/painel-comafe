@@ -11,7 +11,7 @@ const F_FECHAMENTO = 631353; // campo "Data de Fechamento": quando preenchido, �
 
 type KLead = {
   id: number; pipeline_id: number; status_id: number; price: number | null; responsible_user_id: number;
-  created_at: number; updated_at: number; closed_at: number | null;
+  created_at: number; updated_at: number; closed_at: number | null; source_id?: number | null;
   custom_fields_values: { field_id: number; values: { value: unknown }[] }[] | null;
   _embedded?: { tags?: { name: string }[]; contacts?: { id: number; is_main?: boolean }[]; loss_reason?: { name: string }[] };
 };
@@ -79,7 +79,7 @@ export async function sincronizar(opcoes: { completo?: boolean } = {}): Promise<
   const alterados: KLead[] = [];
   for (let page = 1; page < 400; page++) {
     const r = await kommo<{ _embedded: { leads: KLead[] } }>(
-      `/leads?limit=250&page=${page}&with=contacts,loss_reason&filter[pipeline_id]=${PIPELINE}&filter[updated_at][from]=${desde}&order[updated_at]=asc`,
+      `/leads?limit=250&page=${page}&with=contacts,loss_reason,source_id&filter[pipeline_id]=${PIPELINE}&filter[updated_at][from]=${desde}&order[updated_at]=asc`,
     );
     const ls = r?._embedded?.leads ?? [];
     // leads criados desde SYNC_DESDE, e também os mais antigos que fecharam depois disso (a venda conta no mês em que fechou)
@@ -95,6 +95,7 @@ export async function sincronizar(opcoes: { completo?: boolean } = {}): Promise<
       tags: (l._embedded?.tags ?? []).map((t) => t.name),
       lossReason: l._embedded?.loss_reason?.[0]?.name ?? null,
       contactId: contato?.id ?? null,
+      sourceId: l.source_id ?? null,
     };
     await prisma.lead.upsert({ where: { id: l.id }, create: { id: l.id, ...row, stages: [l.status_id] }, update: row });
   }

@@ -3,17 +3,18 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import {
-  ADV, ADV_KEYS, DDD_REGIAO, DDD_UF, ESTADOS_GRID, ETAPAS, NAVY, SEM, SIT_NOME, TIPO_NOME,
+  ADV, ADV_KEYS, DDD_REGIAO, DDD_UF, ESTADOS_GRID, ETAPAS, NAVY, NID, SEM, SIT_NOME, TIPO_NOME,
   fmt, money, pct, type AdvKey, type Situacao, type Tipo,
 } from "@/lib/constantes";
 import type { CampanhaInfo, GastoView, LeadView } from "@/lib/dados";
 import { Seg } from "./Seg";
 
-type FonteFiltro = "todos" | AdvKey | "sem";
+type FonteFiltro = "todos" | AdvKey | "nid" | "sem";
+const nomeFonte = (k: string) => (k === "sem" ? SEM.nome : k === "nid" ? NID.nome : ADV[k as AdvKey]?.nome ?? k);
 type TipoFiltro = "todos" | "motor" | "peca";
 
 const RAMP = ["#E8EEF8", "#C5D5EE", "#8FB0DE", "#4F7FC6", "#1F4E99"];
-const DOTS: Record<string, string> = { todos: NAVY, sem: SEM.cor, ...Object.fromEntries(ADV_KEYS.map((k) => [k, ADV[k].cor])) };
+const DOTS: Record<string, string> = { todos: NAVY, sem: SEM.cor, nid: NID.cor, ...Object.fromEntries(ADV_KEYS.map((k) => [k, ADV[k].cor])) };
 const TIPO_STYLE: Record<string, React.CSSProperties> = {
   motor: { background: "#E6EEFB", color: "#1B4C9C" }, peca: { background: "#FDEEE3", color: "#8A3A10" },
   misto: { background: "#EEF0F3", color: "#3B4556" }, definir: { background: "#FFF4F2", color: "#B42318" },
@@ -226,19 +227,19 @@ export default function Dashboard({ leads, anteriores, campanhas, vendedores, pe
     { label: "Chegaram à cotação", valor: fmt(d.T.ct), sub: pct(d.T.ct, d.T.n) + " dos leads" },
     { label: "Vendas", valor: fmt(d.T.w), sub: "conversão " + pct(d.T.w, d.T.n) },
     // card duplo: faturamento dos anúncios ao lado do faturamento total no Kommo
-    { label: fonte === "todos" ? "Faturamento dos anúncios" : fonte === "sem" ? "Faturamento sem anúncio" : "Faturamento de " + ADV[fonte].nome, valor: money(d.T.fat),
+    { label: fonte === "todos" ? "Faturamento dos anúncios" : fonte === "sem" ? "Faturamento por fora" : fonte === "nid" ? "Faturamento de anúncio sem ID" : "Faturamento de " + ADV[fonte].nome, valor: money(d.T.fat),
       sub: `${fmt(d.T.w)} vendas · ${pct(d.T.fat, d.fatKommo)} do Kommo`,
       lado: { label: "Faturamento no Kommo", valor: money(d.fatKommo), sub: `${fmt(d.vendasKommo)} vendas · todas as origens` },
       rodape: `Anúncios ${delta(d.T.fat, d.A.fat, true)}` },
     { label: "Ticket médio", valor: d.T.w ? money(d.T.fat / d.T.w) : "—", sub: "por venda" },
-    ...(gastos.length && fonte !== "sem" ? [
+    ...(gastos.length && fonte !== "sem" && fonte !== "nid" ? [
       { label: "Investido no Meta", valor: money(d.gasto), sub: delta(d.gasto, d.gastoAnt, true) },
       { label: "Custo por lead", valor: d.T.n ? money(d.gasto / d.T.n) : "—", sub: "investido ÷ leads" },
       { label: "Custo por venda", valor: d.T.w ? money(d.gasto / d.T.w) : "—", sub: "investido ÷ vendas" },
       { label: "Retorno (ROAS)", valor: roas(d.T.fat, d.gasto), sub: d.gasto ? "faturamento ÷ investido" : "sem investimento no período" },
     ] : []),
   ];
-  const fontes: [FonteFiltro, string][] = [["todos", "Todos"], ...ADV_KEYS.map((k) => [k, ADV[k].nome] as [FonteFiltro, string]), ["sem", "Sem anúncio"]];
+  const fontes: [FonteFiltro, string][] = [["todos", "Todos"], ...ADV_KEYS.map((k) => [k, ADV[k].nome] as [FonteFiltro, string]), ["nid", "Anúncio sem ID"], ["sem", "Por fora"]];
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
@@ -316,7 +317,7 @@ export default function Dashboard({ leads, anteriores, campanhas, vendedores, pe
           </div>
         </div>
         <p className="muted" style={{ fontSize: 12 }}>
-          Fora dos funis: <strong>{fmt(d.semAnuncio)}</strong> leads sem anúncio identificado (contato direto, indicação ou anúncio que o Kommo não registrou).
+          Fora dos funis: <strong>{fmt(d.semAnuncio)}</strong> leads criados à mão pelos vendedores (vendas por fora: balcão, telefone, indicação). Leads que entraram pelo WhatsApp sem ID do anúncio contam como “Anúncio (sem ID)”.
         </p>
       </section>}
 
@@ -338,7 +339,7 @@ export default function Dashboard({ leads, anteriores, campanhas, vendedores, pe
                         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                           <div style={{ display: "flex", gap: 2, height: 14, borderRadius: 4, overflow: "hidden", width: `${((v.n / d.maxV) * 78).toFixed(1)}%`, minWidth: 4 }}>
                             {Object.entries(v.porAdv).map(([k, n]) => (
-                              <div key={k} title={`${k === "sem" ? SEM.nome : ADV[k as AdvKey].nome}: ${n}`} style={{ height: "100%", background: DOTS[k], flex: `${n} 1 0` }} />
+                              <div key={k} title={`${nomeFonte(k)}: ${n}`} style={{ height: "100%", background: DOTS[k], flex: `${n} 1 0` }} />
                             ))}
                           </div>
                           <span style={{ fontSize: 12, color: "#5B6576", fontVariantNumeric: "tabular-nums" }}>{fmt(v.n)}</span>
@@ -402,7 +403,7 @@ export default function Dashboard({ leads, anteriores, campanhas, vendedores, pe
         {ver(2) && <section className="card" style={{ display: "flex", flexDirection: "column", gap: 14, gridColumn: "1 / -1" }}>
           <div>
             <h2 className="h2">Motor × peça</h2>
-            <p className="muted" style={{ marginTop: 4 }}>Resultado de cada tipo de campanha{fonte !== "todos" && fonte !== "sem" ? ` de ${ADV[fonte].nome}` : ""} · tipo marcado pelo gestor (ou pela tag do robô)</p>
+            <p className="muted" style={{ marginTop: 4 }}>Resultado de cada tipo de campanha{fonte !== "todos" && fonte !== "sem" && fonte !== "nid" ? ` de ${ADV[fonte].nome}` : ""} · tipo marcado pelo gestor (ou pela tag do robô)</p>
           </div>
           <div style={{ overflowX: "auto" }}>
             <table className="tbl" style={{ minWidth: 860 }}>
@@ -521,7 +522,7 @@ export default function Dashboard({ leads, anteriores, campanhas, vendedores, pe
                       {c.info?.nome ?? c.k}
                       {!c.info?.cadastrada && <span className="muted" style={{ fontSize: 11, marginLeft: 6 }}>(sem cadastro)</span>}
                     </td>
-                    <td style={{ whiteSpace: "nowrap" }}><span className="dot" style={{ background: DOTS[c.adv] }} />{c.adv === ("sem" as string) ? "—" : ADV[c.adv]?.nome}</td>
+                    <td style={{ whiteSpace: "nowrap" }}><span className="dot" style={{ background: DOTS[c.adv] }} />{c.adv === ("sem" as string) ? "—" : nomeFonte(c.adv)}</td>
                     <td>{c.info?.tipo ? <span className="pill" style={{ ...TIPO_STYLE[c.info.tipo], cursor: "default" }}>{TIPO_NOME[c.info.tipo as Tipo]}</span> : <span className="muted">—</span>}</td>
                     <td>{c.info?.situacao ? <span className="pill" style={{ ...SIT_STYLE[c.info.situacao], cursor: "default" }}>{SIT_NOME[c.info.situacao as Situacao]}</span> : <span className="muted">—</span>}</td>
                     <td className="num">{fmt(c.n)}</td>
