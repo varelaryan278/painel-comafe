@@ -7,6 +7,7 @@ import { avisarAtualizacao } from "./eventos";
 const BASE = (process.env.KOMMO_BASE_URL ?? "https://comafeoficial.kommo.com").replace(/\/$/, "") + "/api/v4";
 const PIPELINE = Number(process.env.KOMMO_PIPELINE_ID ?? 14542159);
 const F_AD = 627039, F_ADSET = 627041, F_CAMPAIGN = 627043;
+const F_FECHAMENTO = 631353; // campo "Data de Fechamento": quando preenchido, é a data real da venda
 
 type KLead = {
   id: number; pipeline_id: number; status_id: number; price: number | null; responsible_user_id: number;
@@ -34,6 +35,12 @@ const campo = (l: KLead, id: number) => {
   return v == null || v === "" ? null : String(v);
 };
 const data = (s: number) => new Date(s * 1000);
+// data em que o lead fechou: o campo "Data de Fechamento" vale mais que o closed_at do Kommo (que é quando mudaram a etapa)
+const fechouEm = (l: KLead) => {
+  const v = campo(l, F_FECHAMENTO);
+  const s = v == null ? NaN : /^\d+$/.test(v) ? Number(v) : Math.floor(Date.parse(v) / 1000);
+  return Number.isFinite(s) && s > 0 ? s : l.closed_at;
+};
 
 async function lerEstado(key: string) {
   return (await prisma.syncState.findUnique({ where: { key } }))?.value ?? null;
@@ -76,14 +83,14 @@ export async function sincronizar(opcoes: { completo?: boolean } = {}): Promise<
     );
     const ls = r?._embedded?.leads ?? [];
     // leads criados desde SYNC_DESDE, e também os mais antigos que fecharam depois disso (a venda conta no mês em que fechou)
-    alterados.push(...ls.filter((l) => l.created_at >= desdePadrao || (l.closed_at ?? 0) >= desdePadrao));
+    alterados.push(...ls.filter((l) => l.created_at >= desdePadrao || (fechouEm(l) ?? 0) >= desdePadrao));
     if (ls.length < 250) break;
   }
   for (const l of alterados) {
     const contato = l._embedded?.contacts?.find((c) => c.is_main) ?? l._embedded?.contacts?.[0];
     const row = {
       pipelineId: l.pipeline_id, statusId: l.status_id, createdAt: data(l.created_at), updatedAt: data(l.updated_at),
-      closedAt: l.closed_at ? data(l.closed_at) : null, price: Math.round(l.price ?? 0), responsibleUserId: l.responsible_user_id ?? null,
+      closedAt: fechouEm(l) ? data(fechouEm(l)!) : null, price: Math.round(l.price ?? 0), responsibleUserId: l.responsible_user_id ?? null,
       adId: campo(l, F_AD), adsetId: campo(l, F_ADSET), campaignId: campo(l, F_CAMPAIGN),
       tags: (l._embedded?.tags ?? []).map((t) => t.name),
       lossReason: l._embedded?.loss_reason?.[0]?.name ?? null,
