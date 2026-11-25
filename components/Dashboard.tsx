@@ -105,6 +105,9 @@ export default function Dashboard({ leads, anteriores, campanhas, vendedores, pe
     const semAnuncio = semAnuncioLs.filter((l) => !l.x).length;
     const fatSemAnuncio = semAnuncioLs.reduce((t, l) => t + l.v, 0), vendasSemAnuncio = semAnuncioLs.filter((l) => l.w).length;
     const anuncio = leads.filter((l) => l.f !== "sem" && !l.x);
+    // tudo que fechou ganho no funil do Kommo no período, com ou sem anúncio (não depende dos filtros)
+    const fatKommo = leads.reduce((t, l) => t + l.v, 0), vendasKommo = leads.filter((l) => l.w).length;
+    const fatKommoAnt = anteriores.reduce((t, l) => t + l.v, 0);
     const provisorio = anuncio.filter((l) => l.p).length;
     const semTipo = sel.filter((l) => l.t === "?" && !l.x).length;
 
@@ -207,7 +210,7 @@ export default function Dashboard({ leads, anteriores, campanhas, vendedores, pe
       };
     });
 
-    return { fatSemAnuncio, vendasSemAnuncio, atTotal, atAdv, atVend, atForaHorario, porTipo, gasto, gastoAnt, T, A, funis, semAnuncio, anuncio: anuncio.length, provisorio, semTipo, vend, maxV, porUf, maxUf, ddds, semDdd, dias, linhas, ticksX, ticksY, X, perdas, maxP, camps, dupPessoas, dupExtras, dupCruzados };
+    return { fatKommo, vendasKommo, fatKommoAnt, fatSemAnuncio, vendasSemAnuncio, atTotal, atAdv, atVend, atForaHorario, porTipo, gasto, gastoAnt, T, A, funis, semAnuncio, anuncio: anuncio.length, provisorio, semTipo, vend, maxV, porUf, maxUf, ddds, semDdd, dias, linhas, ticksX, ticksY, X, perdas, maxP, camps, dupPessoas, dupExtras, dupCruzados };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [leads, anteriores, fonte, tipo, mapa, campanhas, vendedores, periodo, gastos, gastosAnt]);
 
@@ -222,9 +225,10 @@ export default function Dashboard({ leads, anteriores, campanhas, vendedores, pe
     { label: "Qualificados", valor: fmt(d.T.q), sub: pct(d.T.q, d.T.n) + " dos leads" },
     { label: "Chegaram à cotação", valor: fmt(d.T.ct), sub: pct(d.T.ct, d.T.n) + " dos leads" },
     { label: "Vendas", valor: fmt(d.T.w), sub: "conversão " + pct(d.T.w, d.T.n) },
-    { label: fonte === "todos" ? "Faturamento dos anúncios" : "Faturamento", valor: money(d.T.fat), sub: delta(d.T.fat, d.A.fat, true) },
-    ...(fonte === "todos" ? [{ label: "Faturamento total", valor: money(d.T.fat + d.fatSemAnuncio),
-      sub: `${fmt(d.T.w + d.vendasSemAnuncio)} vendas · inclui ${money(d.fatSemAnuncio)} sem anúncio` }] : []),
+    { label: fonte === "todos" ? "Faturamento dos anúncios" : fonte === "sem" ? "Faturamento sem anúncio" : "Faturamento de " + ADV[fonte].nome, valor: money(d.T.fat),
+      sub: `${delta(d.T.fat, d.A.fat, true)} · ${pct(d.T.fat, d.fatKommo)} do Kommo` },
+    { label: "Faturamento no Kommo", valor: money(d.fatKommo),
+      sub: `${fmt(d.vendasKommo)} vendas · ${delta(d.fatKommo, d.fatKommoAnt, true)}` },
     { label: "Ticket médio", valor: d.T.w ? money(d.T.fat / d.T.w) : "—", sub: "por venda" },
     ...(gastos.length && fonte !== "sem" ? [
       { label: "Investido no Meta", valor: money(d.gasto), sub: delta(d.gasto, d.gastoAnt, true) },
