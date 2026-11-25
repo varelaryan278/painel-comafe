@@ -20,7 +20,7 @@ export default async function Page({ params, searchParams }: PageProps<"/relator
   const [{ leads, campanhas }, ant, vendedores, sync, gastos, gastosAnt] = await Promise.all([
     carregarLeads(atual.de, atual.ate, regs, donos),
     carregarLeads(anterior.de, anterior.ate, regs, donos),
-    carregarVendedores(true),
+    carregarVendedores(false), // nomes completos dos vendedores (equipe da Comafe); dados de clientes continuam fora
     ultimaSync(),
     carregarGastos(atual.de, atual.ate, regs),
     carregarGastos(anterior.de, anterior.ate, regs),
