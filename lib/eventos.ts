@@ -13,7 +13,18 @@ const url = process.env.REDIS_URL;
 
 function pub() {
   if (!url) return null;
-  return (g.__redisPub ??= new Redis(url, { maxRetriesPerRequest: 2, lazyConnect: false }));
+  if (!g.__redisPub) {
+    g.__redisPub = new Redis(url, { maxRetriesPerRequest: 2, lazyConnect: false });
+    // conexão longa (ex.: sync de vários minutos) pode cair; o ioredis reconecta sozinho, só registramos
+    g.__redisPub.on("error", (e) => console.error("[eventos] Redis:", e.message));
+  }
+  return g.__redisPub;
+}
+
+/** Fecha as conexões com o Redis (para scripts de linha de comando terminarem sozinhos). */
+export async function fecharEventos() {
+  await Promise.all([g.__redisPub, g.__redisSub].map((r) => r?.quit().catch(() => r.disconnect())));
+  g.__redisPub = g.__redisSub = undefined;
 }
 
 function iniciarAssinatura() {
