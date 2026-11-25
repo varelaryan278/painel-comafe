@@ -225,10 +225,11 @@ export default function Dashboard({ leads, anteriores, campanhas, vendedores, pe
     { label: "Qualificados", valor: fmt(d.T.q), sub: pct(d.T.q, d.T.n) + " dos leads" },
     { label: "Chegaram à cotação", valor: fmt(d.T.ct), sub: pct(d.T.ct, d.T.n) + " dos leads" },
     { label: "Vendas", valor: fmt(d.T.w), sub: "conversão " + pct(d.T.w, d.T.n) },
+    // card duplo: faturamento dos anúncios ao lado do faturamento total no Kommo
     { label: fonte === "todos" ? "Faturamento dos anúncios" : fonte === "sem" ? "Faturamento sem anúncio" : "Faturamento de " + ADV[fonte].nome, valor: money(d.T.fat),
-      sub: `${delta(d.T.fat, d.A.fat, true)} · ${pct(d.T.fat, d.fatKommo)} do Kommo` },
-    { label: "Faturamento no Kommo", valor: money(d.fatKommo),
-      sub: `${fmt(d.vendasKommo)} vendas · ${delta(d.fatKommo, d.fatKommoAnt, true)}` },
+      sub: `${fmt(d.T.w)} vendas · ${pct(d.T.fat, d.fatKommo)} do Kommo`,
+      lado: { label: "Faturamento no Kommo", valor: money(d.fatKommo), sub: `${fmt(d.vendasKommo)} vendas · todas as origens` },
+      rodape: `Anúncios ${delta(d.T.fat, d.A.fat, true)}` },
     { label: "Ticket médio", valor: d.T.w ? money(d.T.fat / d.T.w) : "—", sub: "por venda" },
     ...(gastos.length && fonte !== "sem" ? [
       { label: "Investido no Meta", valor: money(d.gasto), sub: delta(d.gasto, d.gastoAnt, true) },
@@ -270,13 +271,26 @@ export default function Dashboard({ leads, anteriores, campanhas, vendedores, pe
       </div>
 
       {ver(0) && <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 16 }}>
-        {kpis.map((k) => (
-          <div key={k.label} className="card" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            <div style={{ fontSize: 13, color: "#5B6576", fontWeight: 500 }}>{k.label}</div>
-            <div className="display" style={{ fontSize: k.valor.length > 9 ? 25 : 30, fontWeight: 600, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{k.valor}</div>
-            <div style={{ fontSize: 12, color: "#3B4556" }}>{k.sub}</div>
-          </div>
-        ))}
+        {kpis.map((k: { label: string; valor: string; sub: string; lado?: { label: string; valor: string; sub: string }; rodape?: string }) => {
+          const bloco = (x: { label: string; valor: string; sub: string }) => (
+            <div style={{ display: "flex", flexDirection: "column", gap: 6, flex: "1 1 170px", minWidth: 0 }}>
+              <div style={{ fontSize: 13, color: "#5B6576", fontWeight: 500 }}>{x.label}</div>
+              <div className="display" style={{ fontSize: x.valor.length > 9 ? 25 : 30, fontWeight: 600, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{x.valor}</div>
+              <div style={{ fontSize: 12, color: "#3B4556" }}>{x.sub}</div>
+            </div>
+          );
+          if (!k.lado) return <div key={k.label} className="card" style={{ display: "flex", flexDirection: "column", gap: 6 }}>{bloco(k)}</div>;
+          return (
+            <div key={k.label} className="card kpi-duplo" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "12px 20px" }}>
+                {bloco(k)}
+                <div aria-hidden="true" style={{ width: 1, background: "#E3E8F0", alignSelf: "stretch" }} />
+                {bloco(k.lado)}
+              </div>
+              {k.rodape && <div style={{ fontSize: 12, color: "#5B6576", borderTop: "1px solid #E3E8F0", paddingTop: 8 }}>{k.rodape}</div>}
+            </div>
+          );
+        })}
       </div>}
       {tipo !== "todos" && d.semTipo === 0 && leads.some((l) => l.t === "?") && (
         <p className="muted" style={{ marginTop: -8 }}>Leads sem tipo definido (sem cadastro e sem tag peça/motor) ficam fora deste filtro.</p>

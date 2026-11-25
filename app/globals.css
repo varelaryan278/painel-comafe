@@ -85,3 +85,7 @@ a:hover { color: var(--navy); }
   table { break-inside: auto; }
   tr { break-inside: avoid; }
 }
+
+/* card de faturamento duplo (anúncios | Kommo) ocupa duas colunas da grade de indicadores */
+.kpi-duplo { grid-column: span 2; }
+@media (max-width: 440px) { .kpi-duplo { grid-column: auto; } }
