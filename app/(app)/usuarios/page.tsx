@@ -1,9 +1,9 @@
-import { headers } from "next/headers";
 import Usuarios from "@/components/Usuarios";
 import { linkPublicoAtivo } from "@/lib/dados";
 import { prisma } from "@/lib/db";
 import { exigirAdmin } from "@/lib/sessao";
 import { ultimaSync } from "@/lib/sync";
+import { urlPublica } from "@/lib/url";
 
 export default async function Page() {
   const eu = await exigirAdmin();
@@ -12,8 +12,7 @@ export default async function Page() {
     linkPublicoAtivo(),
     ultimaSync(),
   ]);
-  const h = await headers();
-  const origem = process.env.BETTER_AUTH_URL?.replace(/\/$/, "") || `${h.get("x-forwarded-proto") ?? "http"}://${h.get("host")}`;
+  const origem = await urlPublica();
   return (
     <Usuarios
       origem={origem}

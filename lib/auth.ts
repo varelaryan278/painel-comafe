@@ -3,7 +3,11 @@ import { prismaAdapter } from "@better-auth/prisma-adapter";
 import { nextCookies } from "better-auth/next-js";
 import { prisma } from "./db";
 
+const URL_PUBLICA = (process.env.APP_URL || process.env.BETTER_AUTH_URL || "").replace(/\/+$/, "") || undefined;
+
 export const auth = betterAuth({
+  baseURL: URL_PUBLICA,
+  trustedOrigins: URL_PUBLICA ? [URL_PUBLICA] : [],
   database: prismaAdapter(prisma, { provider: "postgresql" }),
   // Sem cadastro aberto: usuários são criados pelo admin no painel.
   emailAndPassword: { enabled: true, disableSignUp: true, minPasswordLength: 8 },

@@ -2,6 +2,7 @@ import { ADV_KEYS, type AdvKey } from "./constantes";
 import { decifrar, provaSegredo } from "./cripto";
 import { prisma } from "./db";
 import { avisarAtualizacao } from "./eventos";
+import { urlPublica } from "./url";
 
 // Leitura do Meta (Graph API) — somente leitura.
 // Acesso por duas vias:
@@ -53,14 +54,15 @@ async function todas<T>(path: string, ac: Acesso, limite = 5000): Promise<T[]> {
 }
 
 // ---------------------------------------------------------------- OAuth (popup)
-export function urlRetorno() {
-  return (process.env.BETTER_AUTH_URL ?? "http://localhost:3000").replace(/\/$/, "") + "/api/meta/callback";
+/** Endereço de volta do login do Facebook — precisa estar em "URIs de redirecionamento do OAuth válidos" no app da Meta. */
+export async function urlRetorno() {
+  return (await urlPublica()) + "/api/meta/callback";
 }
 
-export function urlLogin(state: string) {
+export async function urlLogin(state: string) {
   const u = new URL(`https://www.facebook.com/${VERSAO}/dialog/oauth`);
   u.searchParams.set("client_id", process.env.META_APP_ID!);
-  u.searchParams.set("redirect_uri", urlRetorno());
+  u.searchParams.set("redirect_uri", await urlRetorno());
   u.searchParams.set("state", state);
   u.searchParams.set("response_type", "code");
   u.searchParams.set("display", "popup");
@@ -73,7 +75,7 @@ export function urlLogin(state: string) {
 /** Troca o código do popup por um token de ~60 dias e lista as contas de anúncio liberadas. */
 export async function concluirLogin(code: string) {
   const id = process.env.META_APP_ID!, segredo = process.env.META_APP_SECRET!;
-  const curto = await fetch(`${GRAPH}/oauth/access_token?` + new URLSearchParams({ client_id: id, client_secret: segredo, redirect_uri: urlRetorno(), code }), { cache: "no-store" })
+  const curto = await fetch(`${GRAPH}/oauth/access_token?` + new URLSearchParams({ client_id: id, client_secret: segredo, redirect_uri: await urlRetorno(), code }), { cache: "no-store" })
     .then((r) => r.json() as Promise<{ access_token?: string } & ErroMeta>);
   if (!curto.access_token) throw new Error(curto.error?.message ?? "O Facebook não devolveu o acesso.");
   const longo = await fetch(`${GRAPH}/oauth/access_token?` + new URLSearchParams({ grant_type: "fb_exchange_token", client_id: id, client_secret: segredo, fb_exchange_token: curto.access_token }), { cache: "no-store" })

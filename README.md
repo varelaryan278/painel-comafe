@@ -16,7 +16,8 @@ Stack: Next.js 16 · Prisma 7 + PostgreSQL · Better Auth · ioredis.
    - `DATABASE_URL` — `postgresql://USUARIO:SENHA@HOST:5432/BANCO?schema=public`
    - `REDIS_URL` — `redis://:SENHA@HOST:6379/0` (opcional)
    - `BETTER_AUTH_SECRET` — gere com `openssl rand -base64 48`
-   - `BETTER_AUTH_URL` — endereço público, ex.: `https://comafe.matratecnologia.com`
+   - `APP_URL` e `BETTER_AUTH_URL` — endereço público, ex.: `https://comafe.matratecnologia.com` (sem `/` no final).
+     No app da Meta, em Login do Facebook › Configurações, cadastre `APP_URL/api/meta/callback` em "URIs de redirecionamento do OAuth válidos".
    - `KOMMO_TOKEN` — token longo da integração do Kommo
    - `SYNC_SECRET` — gere com `openssl rand -base64 24`
 3. Instale, crie as tabelas e o primeiro admin:

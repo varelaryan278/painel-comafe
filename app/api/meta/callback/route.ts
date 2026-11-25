@@ -4,13 +4,14 @@ import { auth } from "@/lib/auth";
 import { cifrar } from "@/lib/cripto";
 import { prisma } from "@/lib/db";
 import { concluirLogin } from "@/lib/meta";
+import { urlDe } from "@/lib/url";
 
 // Volta do login do Facebook: troca o código por um acesso de ~60 dias e guarda criptografado.
 export async function GET(req: Request) {
   const url = new URL(req.url);
-  const ir = (q: string) => NextResponse.redirect(new URL(`/meta/contas?${q}`, req.url));
+  const ir = async (q: string) => NextResponse.redirect(await urlDe(`/meta/contas?${q}`));
   const s = await auth.api.getSession({ headers: await headers() });
-  if (!s) return NextResponse.redirect(new URL("/login", req.url));
+  if (!s) return NextResponse.redirect(await urlDe("/login"));
 
   const jar = await cookies();
   const esperado = jar.get("meta_oauth_state")?.value;
