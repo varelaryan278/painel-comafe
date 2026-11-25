@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { definirTipoEmLote, limparTipo, sincronizarMetaAgora, type Resultado } from "@/app/actions";
 import type { AnuncioView, CampanhaView, ConjuntoView, ContaView, Numeros, SemVinculo } from "@/lib/anuncios";
@@ -9,6 +10,8 @@ import { Seg } from "./Seg";
 type Nivel = "campanha" | "conjunto" | "anuncio";
 type Sel = Map<string, Nivel>;
 type Detalhe = { conta: ContaView; camp: CampanhaView; set: ConjuntoView; ad: AnuncioView };
+type Otimista = { base: ContaView[]; m: Map<string, string | null> };
+const VAZIO = new Map<string, string | null>();
 type LeadRec = { id: number; em: number; etapa: string; vendedor: string; valor: number };
 
 const FORMATOS: [string, string][] = [
@@ -31,6 +34,8 @@ function abrirGerenciador(contaId: string, adId: string) {
   window.open(url, "gerenciador-meta", `width=${w},height=${h},left=${window.screenX + 40},top=${window.screenY + 40}`);
 }
 const cpl = (n: Numeros) => (n.gasto > 0 && n.leads > 0 ? money(n.gasto / n.leads) : "—");
+const cpv = (n: Numeros) => (n.gasto > 0 && n.vendas > 0 ? money(n.gasto / n.vendas) : "—");
+const roas = (n: Numeros) => (n.gasto > 0 ? (n.fat / n.gasto).toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + "x" : "—");
 const ha = (s: number | null) => {
   if (!s) return "nenhum lead no período";
   const m = Math.round((Date.now() / 1000 - s) / 60);
@@ -44,7 +49,45 @@ export default function Anuncios({ arvore, semVinculo, isAdmin, metaOk, ultimaMe
 }) {
   const [msg, setMsg] = useState<Resultado>(null);
   const [pend, start] = useTransition();
-  const rodar = (fn: () => Promise<Resultado>) => start(async () => { const r = await fn(); setMsg(r); if (r?.ok) setSel(new Map()); });
+  const router = useRouter();
+  const rodar = (fn: () => Promise<Resultado>) => start(async () => { const r = await fn(); setMsg(r); if (r?.ok) { setSel(new Map()); router.refresh(); } });
+
+  // Mudança de tipo aparece na hora (antes do servidor responder); some quando os dados novos chegam.
+  const [otim, setOtim] = useState<Otimista>({ base: arvore, m: new Map() });
+  const sobre = useMemo(() => (otim.base === arvore ? otim.m : VAZIO), [otim, arvore]);
+  const aplicarTipo = (itens: { metaId: string; nivel: Nivel }[], t: string | null, acao: () => Promise<Resultado>) => {
+    const antes = sobre;
+    setOtim({ base: arvore, m: new Map([...sobre, ...itens.map((i) => [i.metaId, t] as [string, string | null])]) });
+    start(async () => {
+      const r = await acao();
+      setMsg(r);
+      if (r?.ok) { setSel(new Map()); router.refresh(); } else setOtim({ base: arvore, m: antes });
+    });
+  };
+  const arvoreViva = useMemo(() => {
+    if (!sobre.size) return arvore;
+    const pega = (id: string, atual: string | null) => (sobre.has(id) ? sobre.get(id)! : atual);
+    return arvore.map((c) => ({
+      ...c,
+      campanhas: c.campanhas.map((cp) => {
+        const tCamp = pega(cp.id, cp.tipo);
+        return {
+          ...cp, tipo: tCamp,
+          conjuntos: cp.conjuntos.map((st) => {
+            const proprio = pega(st.id, st.tipoProprio);
+            const tSet = proprio ?? tCamp;
+            return {
+              ...st, tipo: tSet, tipoProprio: proprio,
+              anuncios: st.anuncios.map((a) => {
+                const own = pega(a.id, a.tipoNivel === "anuncio" ? a.tipo : null);
+                return { ...a, tipo: own ?? tSet, tipoNivel: own ? "anuncio" as const : proprio ? "conjunto" as const : tCamp ? "campanha" as const : null };
+              }),
+            };
+          }),
+        };
+      }),
+    }));
+  }, [arvore, sobre]);
 
   const [adv, setAdv] = useState<"todos" | AdvKey>("todos");
   const [sit, setSit] = useState<"ativos" | "todos">("ativos");
@@ -52,7 +95,7 @@ export default function Anuncios({ arvore, semVinculo, isAdmin, metaOk, ultimaMe
   const [comLeads, setComLeads] = useState(false);
   const [busca, setBusca] = useState("");
   const [sel, setSel] = useState<Sel>(new Map());
-  const [det, setDet] = useState<Detalhe | null>(null);
+  const [detId, setDetId] = useState<string | null>(null);
 
   const passaAd = (a: AnuncioView) =>
     (sit === "todos" || ativo(a.status) || a.n.leads > 0) &&
@@ -60,7 +103,7 @@ export default function Anuncios({ arvore, semVinculo, isAdmin, metaOk, ultimaMe
     (!comLeads || a.n.leads > 0) &&
     (!busca || (a.nome + " " + a.id + " " + (a.titulo ?? "")).toLowerCase().includes(busca.toLowerCase()));
 
-  const visivel = useMemo(() => arvore
+  const visivel = useMemo(() => arvoreViva
     .filter((c) => adv === "todos" || c.anunciante === adv)
     .map((c) => ({
       ...c,
@@ -70,9 +113,102 @@ export default function Anuncios({ arvore, semVinculo, isAdmin, metaOk, ultimaMe
       })).filter((cp) => cp.conjuntos.length),
     })),
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  [arvore, adv, sit, tipo, comLeads, busca]);
+  [arvoreViva, adv, sit, tipo, comLeads, busca]);
 
-  const alternar = (id: string, nivel: Nivel) => setSel((s) => { const n = new Map(s); if (n.has(id)) n.delete(id); else n.set(id, nivel); return n; });
+  // A prévia aberta sempre lê o anúncio da árvore atual (atualiza junto com o resto da tela)
+  let det: Detalhe | null = null;
+  if (detId) {
+    busca: for (const conta of arvoreViva) for (const camp of conta.campanhas) for (const set of camp.conjuntos) for (const ad of set.anuncios)
+      if (ad.id === detId) { det = { conta, camp, set, ad }; break busca; }
+  }
+
+  // ---- seleção em cascata: campanha ⊃ conjuntos ⊃ anúncios
+  // A seleção guarda só o nível mais alto marcado (campanha cobre tudo dentro dela), o mesmo nível em que o tipo é gravado.
+  const hier = useMemo(() => {
+    const setsDaCamp = new Map<string, string[]>(), adsDoSet = new Map<string, string[]>();
+    const campDoSet = new Map<string, string>(), setDoAd = new Map<string, string>();
+    for (const c of arvore) for (const cp of c.campanhas) {
+      setsDaCamp.set(cp.id, cp.conjuntos.map((st) => st.id));
+      for (const st of cp.conjuntos) {
+        campDoSet.set(st.id, cp.id);
+        adsDoSet.set(st.id, st.anuncios.map((a) => a.id));
+        for (const a of st.anuncios) setDoAd.set(a.id, st.id);
+      }
+    }
+    return { setsDaCamp, adsDoSet, campDoSet, setDoAd };
+  }, [arvore]);
+
+  /** Junta: todos os anúncios de um conjunto marcados → marca o conjunto; todos os conjuntos → marca a campanha. */
+  const normalizar = (n: Sel) => {
+    for (const [setId, ads] of hier.adsDoSet) {
+      if (ads.length && ads.every((a) => n.has(a))) { ads.forEach((a) => n.delete(a)); n.set(setId, "conjunto"); }
+    }
+    for (const [campId, sets] of hier.setsDaCamp) {
+      if (sets.length && sets.every((x) => n.has(x))) { sets.forEach((x) => n.delete(x)); n.set(campId, "campanha"); }
+    }
+    return n;
+  };
+
+  const estado = (id: string, nivel: Nivel): "on" | "parcial" | "off" => {
+    if (nivel === "campanha") {
+      if (sel.has(id)) return "on";
+      const sets = hier.setsDaCamp.get(id) ?? [];
+      return sets.some((x) => sel.has(x) || (hier.adsDoSet.get(x) ?? []).some((a) => sel.has(a))) ? "parcial" : "off";
+    }
+    if (nivel === "conjunto") {
+      if (sel.has(id) || sel.has(hier.campDoSet.get(id) ?? "")) return "on";
+      return (hier.adsDoSet.get(id) ?? []).some((a) => sel.has(a)) ? "parcial" : "off";
+    }
+    const st = hier.setDoAd.get(id) ?? "";
+    return sel.has(id) || sel.has(st) || sel.has(hier.campDoSet.get(st) ?? "") ? "on" : "off";
+  };
+
+  const alternar = (id: string, nivel: Nivel) => setSel((s) => {
+    const n = new Map(s);
+    if (nivel === "campanha") {
+      if (n.has(id)) n.delete(id);
+      else { for (const x of hier.setsDaCamp.get(id) ?? []) { n.delete(x); (hier.adsDoSet.get(x) ?? []).forEach((a) => n.delete(a)); } n.set(id, "campanha"); }
+    } else if (nivel === "conjunto") {
+      const camp = hier.campDoSet.get(id) ?? "";
+      if (n.has(camp)) { n.delete(camp); for (const x of hier.setsDaCamp.get(camp) ?? []) if (x !== id) n.set(x, "conjunto"); }
+      else if (n.has(id)) n.delete(id);
+      else { (hier.adsDoSet.get(id) ?? []).forEach((a) => n.delete(a)); n.set(id, "conjunto"); }
+    } else {
+      const st = hier.setDoAd.get(id) ?? "", camp = hier.campDoSet.get(st) ?? "";
+      if (n.has(camp)) {
+        n.delete(camp);
+        for (const x of hier.setsDaCamp.get(camp) ?? []) if (x !== st) n.set(x, "conjunto");
+        for (const a of hier.adsDoSet.get(st) ?? []) if (a !== id) n.set(a, "anuncio");
+      } else if (n.has(st)) {
+        n.delete(st);
+        for (const a of hier.adsDoSet.get(st) ?? []) if (a !== id) n.set(a, "anuncio");
+      } else if (n.has(id)) n.delete(id);
+      else n.set(id, "anuncio");
+    }
+    return normalizar(n);
+  });
+
+  const resumoSel = (() => {
+    let camps = 0, sets = 0, ads = 0;
+    const cobertos = new Set<string>();
+    for (const [id, nivel] of sel) {
+      if (nivel === "campanha") { camps++; for (const x of hier.setsDaCamp.get(id) ?? []) (hier.adsDoSet.get(x) ?? []).forEach((a) => cobertos.add(a)); }
+      else if (nivel === "conjunto") { sets++; (hier.adsDoSet.get(id) ?? []).forEach((a) => cobertos.add(a)); }
+      else { ads++; cobertos.add(id); }
+    }
+    const partes = [camps && `${camps} campanha${camps > 1 ? "s" : ""}`, sets && `${sets} conjunto${sets > 1 ? "s" : ""}`, ads && `${ads} anúncio${ads > 1 ? "s" : ""}`].filter(Boolean);
+    return { texto: partes.join(", "), cobertos: cobertos.size };
+  })();
+
+  /** Caixa de seleção com estado "meio marcado". */
+  const caixa = (id: string, nivel: Nivel, nome: string) => {
+    const e = estado(id, nivel);
+    return (
+      <input type="checkbox" aria-label={`Selecionar ${nivel === "anuncio" ? "anúncio" : nivel} ${nome}`} checked={e === "on"}
+        aria-checked={e === "parcial" ? "mixed" : e === "on"} ref={(el) => { if (el) el.indeterminate = e === "parcial"; }}
+        onClick={(ev) => ev.stopPropagation()} onChange={() => alternar(id, nivel)} style={{ width: 18, height: 18, accentColor: "#0E2A52", cursor: "pointer" }} />
+    );
+  };
   const totalAds = visivel.reduce((t, c) => t + c.campanhas.reduce((u, cp) => u + cp.conjuntos.reduce((v, st) => v + st.anuncios.length, 0), 0), 0);
 
   if (arvore.length === 0) {
@@ -117,6 +253,7 @@ export default function Anuncios({ arvore, semVinculo, isAdmin, metaOk, ultimaMe
             <div style={{ display: "flex", alignItems: "center", gap: 6, fontWeight: 600 }}><span className="dot" style={{ background: ADV[c.anunciante].cor }} />{ADV[c.anunciante].nome}</div>
             <div style={{ fontSize: 12, color: "#5B6576" }}>{c.nome} · {c.id}</div>
             <div style={{ fontSize: 13, marginTop: 4 }}>{fmt(c.n.leads)} leads · {money(c.n.gasto)} · CPL {cpl(c.n)}</div>
+            <div style={{ fontSize: 13 }}>{fmt(c.n.vendas)} vendas · {money(c.n.fat)} · custo/venda {cpv(c.n)} · <strong>ROAS {roas(c.n)}</strong></div>
             {c.erro && <div style={{ fontSize: 12, color: "#B42318" }}>Erro ao ler: {c.erro}</div>}
           </div>
         ))}
@@ -129,27 +266,27 @@ export default function Anuncios({ arvore, semVinculo, isAdmin, metaOk, ultimaMe
       {visivel.map((c) => c.campanhas.map((cp) => (
         <details key={cp.id} className="card" open style={{ padding: 0 }}>
           <summary style={{ listStyle: "none", cursor: "pointer", padding: "14px 18px", display: "flex", flexWrap: "wrap", alignItems: "center", gap: "8px 14px", borderBottom: "1px solid #EEF1F5" }}>
-            <input type="checkbox" aria-label={`Selecionar campanha ${cp.nome}`} checked={sel.has(cp.id)} onClick={(e) => e.stopPropagation()} onChange={() => alternar(cp.id, "campanha")} />
+            {caixa(cp.id, "campanha", cp.nome)}
             <span className="dot" style={{ background: ADV[c.anunciante].cor }} />
             <span style={{ fontWeight: 600 }}>{cp.nome}</span>
             <StatusPill s={cp.status} />
             <TipoPill tipo={cp.tipo} />
-            <span className="muted" style={{ marginLeft: "auto", fontSize: 12 }}>Campanha · {fmt(cp.n.leads)} leads · {fmt(cp.n.vendas)} vendas · {money(cp.n.gasto)} · CPL {cpl(cp.n)}</span>
+            <span className="muted" style={{ marginLeft: "auto", fontSize: 12 }}>Campanha · {fmt(cp.n.leads)} leads · {fmt(cp.n.vendas)} vendas · {money(cp.n.gasto)} · CPL {cpl(cp.n)} · ROAS {roas(cp.n)}</span>
           </summary>
           <div style={{ padding: "8px 18px 18px", display: "flex", flexDirection: "column", gap: 14 }}>
             {cp.conjuntos.map((st) => (
               <div key={st.id}>
                 <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "6px 12px", margin: "8px 0" }}>
-                  <input type="checkbox" aria-label={`Selecionar conjunto ${st.nome}`} checked={sel.has(st.id)} onChange={() => alternar(st.id, "conjunto")} />
+                  {caixa(st.id, "conjunto", st.nome)}
                   <span style={{ fontSize: 13, fontWeight: 600, color: "#3B4556" }}>Conjunto: {st.nome}</span>
                   <StatusPill s={st.status} />
                   <span className="muted" style={{ fontSize: 12 }}>{fmt(st.n.leads)} leads · {money(st.n.gasto)}</span>
                 </div>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(300px, 100%), 1fr))", gap: 10 }}>
                   {st.anuncios.map((a) => (
-                    <div key={a.id} style={{ border: "1px solid " + (sel.has(a.id) ? "#4F7FC6" : "#E2E7EF"), borderRadius: 12, padding: 10, display: "grid", gridTemplateColumns: "auto 84px minmax(0, 1fr)", gap: 10, alignItems: "start", background: sel.has(a.id) ? "#F3F7FD" : "#fff" }}>
-                      <input type="checkbox" aria-label={`Selecionar anúncio ${a.nome}`} checked={sel.has(a.id)} onChange={() => alternar(a.id, "anuncio")} style={{ marginTop: 4 }} />
-                      <button type="button" onClick={() => setDet({ conta: c, camp: cp, set: st, ad: a })} aria-label={`Ver prévia de ${a.nome}`}
+                    <div key={a.id} style={{ border: "1px solid " + (estado(a.id, "anuncio") === "on" ? "#4F7FC6" : "#E2E7EF"), borderRadius: 12, padding: 10, display: "grid", gridTemplateColumns: "auto 84px minmax(0, 1fr)", gap: 10, alignItems: "start", background: estado(a.id, "anuncio") === "on" ? "#F3F7FD" : "#fff" }}>
+                      <span style={{ marginTop: 2 }}>{caixa(a.id, "anuncio", a.nome)}</span>
+                      <button type="button" onClick={() => setDetId(a.id)} aria-label={`Ver prévia de ${a.nome}`}
                         style={{ position: "relative", width: 84, height: 84, padding: 0, border: 0, borderRadius: 8, overflow: "hidden", background: "#EEF1F5", cursor: "pointer" }}>
                         {a.thumb
                           // eslint-disable-next-line @next/next/no-img-element
@@ -164,9 +301,10 @@ export default function Anuncios({ arvore, semVinculo, isAdmin, metaOk, ultimaMe
                           <TipoPill tipo={a.tipo} herdado={a.tipoNivel && a.tipoNivel !== "anuncio" ? a.tipoNivel : null} />
                         </div>
                         <div style={{ fontSize: 12, color: "#3B4556" }}>{fmt(a.n.leads)} leads · {fmt(a.n.vendas)} vendas · CPL {cpl(a.n)}</div>
+                        {a.n.vendas > 0 && <div style={{ fontSize: 12, color: "#146C3A", fontWeight: 600 }}>{money(a.n.fat)} · ROAS {roas(a.n)}</div>}
                         <div style={{ fontSize: 11, color: "#5B6576" }}>{ha(a.n.ultimo)}</div>
                         <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-                          <button type="button" className="linkbtn" style={{ fontSize: 12, fontWeight: 600 }} onClick={() => setDet({ conta: c, camp: cp, set: st, ad: a })}>Ver prévia e leads →</button>
+                          <button type="button" className="linkbtn" style={{ fontSize: 12, fontWeight: 600 }} onClick={() => setDetId(a.id)}>Ver prévia e leads →</button>
                           <button type="button" className="linkbtn" style={{ fontSize: 12 }} onClick={() => abrirGerenciador(c.id, a.id)}>Gerenciador ↗</button>
                         </div>
                       </div>
@@ -183,17 +321,20 @@ export default function Anuncios({ arvore, semVinculo, isAdmin, metaOk, ultimaMe
 
       {sel.size > 0 && (
         <div role="region" aria-label="Ações em lote" style={{ position: "fixed", left: 0, right: 0, bottom: 0, background: "#172033", color: "#fff", padding: "12px 24px", display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center", zIndex: 20 }}>
-          <strong>{sel.size} selecionado(s)</strong>
+          <strong>{resumoSel.texto}</strong>
+          <span style={{ color: "#C9D1DE", fontSize: 13 }}>· cobre {fmt(resumoSel.cobertos)} anúncio(s)</span>
           <span style={{ color: "#C9D1DE", fontSize: 13 }}>Marcar como:</span>
           {(["motor", "peca", "misto"] as Tipo[]).map((t) => (
             <button key={t} type="button" className="btn" disabled={pend}
-              onClick={() => rodar(() => definirTipoEmLote([...sel.entries()].map(([metaId, nivel]) => ({ metaId, nivel })), t))}>{TIPO_NOME[t]}</button>
+              onClick={() => { const itens = [...sel.entries()].map(([metaId, nivel]) => ({ metaId, nivel })); aplicarTipo(itens, t, () => definirTipoEmLote(itens, t)); }}>{TIPO_NOME[t]}</button>
           ))}
           <button type="button" className="btn" style={{ marginLeft: "auto", background: "transparent", color: "#fff", borderColor: "#5B6576" }} onClick={() => setSel(new Map())}>Limpar seleção</button>
         </div>
       )}
 
-      {det && <Previa det={det} onClose={() => setDet(null)} onLimpar={(id) => rodar(() => limparTipo(id))} onTipo={(t) => rodar(() => definirTipoEmLote([{ metaId: det.ad.id, nivel: "anuncio" }], t))} pend={pend} />}
+      {det && <Previa det={det} onClose={() => setDetId(null)}
+        onLimpar={(id) => aplicarTipo([{ metaId: id, nivel: "anuncio" }], null, () => limparTipo(id))}
+        onTipo={(t) => aplicarTipo([{ metaId: det.ad.id, nivel: "anuncio" }], t, () => definirTipoEmLote([{ metaId: det.ad.id, nivel: "anuncio" }], t))} pend={pend} />}
     </div>
   );
 }
@@ -295,7 +436,7 @@ function Previa({ det, onClose, onTipo, onLimpar, pend }: { det: Detalhe; onClos
             {ad.tipoNivel === "anuncio" && <button type="button" className="linkbtn" style={{ fontSize: 12 }} disabled={pend} onClick={() => onLimpar(ad.id)}>usar o tipo da campanha</button>}
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 8 }}>
-            {[["Leads", fmt(ad.n.leads)], ["Cotações", fmt(ad.n.cot)], ["Vendas", fmt(ad.n.vendas)], ["Investido", money(ad.n.gasto)]].map(([l, v]) => (
+            {[["Leads", fmt(ad.n.leads)], ["Cotações", fmt(ad.n.cot)], ["Vendas", fmt(ad.n.vendas)], ["Faturamento", money(ad.n.fat)], ["Investido", money(ad.n.gasto)], ["Custo/lead", cpl(ad.n)], ["Custo/venda", cpv(ad.n)], ["ROAS", roas(ad.n)]].map(([l, v]) => (
               <div key={l} style={{ background: "#F4F6FA", borderRadius: 10, padding: "8px 10px" }}>
                 <div style={{ fontSize: 11, color: "#5B6576" }}>{l}</div><div style={{ fontWeight: 600 }}>{v}</div>
               </div>

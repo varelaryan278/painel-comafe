@@ -115,6 +115,31 @@ export async function carregarLeads(de: number, ate: number, regs: Map<string, R
   return { leads, campanhas };
 }
 
+/** Investimento no Meta (contas conectadas) no período, por anúncio, já com dono e tipo. */
+export type GastoView = { f: AdvKey; t: TipoLead; k: string; v: number };
+
+export async function carregarGastos(de: number, ate: number, regs: Map<string, RegistroMin>): Promise<GastoView[]> {
+  const dia = (s: number) => new Date(s * 1000).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+  const [somas, ads, contas] = await Promise.all([
+    prisma.metaGasto.groupBy({ by: ["adId"], _sum: { gasto: true }, where: { data: { gte: dia(de), lt: dia(ate) } } }),
+    prisma.metaAnuncio.findMany({ select: { id: true, conjuntoId: true, campanhaId: true, contaId: true } }),
+    prisma.metaConta.findMany({ select: { id: true, anunciante: true } }),
+  ]);
+  const ad = new Map(ads.map((a) => [a.id, a]));
+  const dono = new Map(contas.map((c) => [c.id, c.anunciante as AdvKey]));
+  const out: GastoView[] = [];
+  for (const g of somas) {
+    const a = ad.get(g.adId), v = g._sum.gasto ?? 0;
+    if (!a || !v) continue;
+    const f = dono.get(a.contaId);
+    if (!f) continue;
+    const reg = regs.get(a.id) ?? regs.get(a.conjuntoId) ?? regs.get(a.campanhaId);
+    const t: TipoLead = reg?.tipo === "motor" || reg?.tipo === "peca" ? reg.tipo : "?";
+    out.push({ f, t, k: a.campanhaId, v });
+  }
+  return out;
+}
+
 export async function carregarVendedores(anonimizar: boolean) {
   const us = await prisma.kommoUser.findMany({ orderBy: { name: "asc" } });
   return Object.fromEntries(us.map((u, i) => [u.id, anonimizar ? `Vendedor ${i + 1}` : u.name])) as Record<number, string>;

@@ -6,7 +6,7 @@ import {
   ADV, ADV_KEYS, DDD_REGIAO, DDD_UF, ESTADOS_GRID, ETAPAS, NAVY, SEM, SIT_NOME, TIPO_NOME,
   fmt, money, pct, type AdvKey, type Situacao, type Tipo,
 } from "@/lib/constantes";
-import type { CampanhaInfo, LeadView } from "@/lib/dados";
+import type { CampanhaInfo, GastoView, LeadView } from "@/lib/dados";
 import { Seg } from "./Seg";
 
 type FonteFiltro = "todos" | AdvKey | "sem";
@@ -29,12 +29,16 @@ export type DashboardProps = {
   vendedores: Record<number, string>;
   periodo: { de: number; ate: number; rotulo: string };
   ultimaSync: number | null;
+  gastos?: GastoView[];
+  gastosAnt?: GastoView[];
   publico?: boolean;
 };
 
+const roas = (fat: number, gasto: number) => (gasto > 0 ? (fat / gasto).toLocaleString("pt-BR", { maximumFractionDigits: 1, minimumFractionDigits: 1 }) + "x" : "—");
+
 const dia = (s: number) => new Date(s * 1000).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
 
-export default function Dashboard({ leads, anteriores, campanhas, vendedores, periodo, ultimaSync, publico = false }: DashboardProps) {
+export default function Dashboard({ leads, anteriores, campanhas, vendedores, periodo, ultimaSync, gastos = [], gastosAnt = [], publico = false }: DashboardProps) {
   const [fonte, setFonte] = useState<FonteFiltro>("todos");
   const [tipo, setTipo] = useState<TipoFiltro>("todos");
   const [mapa, setMapa] = useState<"leads" | "fat">("leads");
@@ -42,8 +46,15 @@ export default function Dashboard({ leads, anteriores, campanhas, vendedores, pe
   const filtrar = (ls: LeadView[], f: FonteFiltro) =>
     ls.filter((l) => (f === "todos" ? l.f !== "sem" : l.f === f) && (tipo === "todos" || l.t === tipo));
 
+  const filtrarG = (gs: GastoView[], f: FonteFiltro) =>
+    gs.filter((g) => (f === "todos" ? true : g.f === f) && (tipo === "todos" || g.t === tipo));
+  const somaG = (gs: GastoView[]) => gs.reduce((t, g) => t + g.v, 0);
+
   const d = useMemo(() => {
     const sel = filtrar(leads, fonte);
+    const gasto = somaG(filtrarG(gastos, fonte)), gastoAnt = somaG(filtrarG(gastosAnt, fonte));
+    const gastoPorCamp = new Map<string, number>();
+    for (const g of filtrarG(gastos, fonte)) gastoPorCamp.set(g.k, (gastoPorCamp.get(g.k) ?? 0) + g.v);
     const ant = filtrar(anteriores, fonte);
     const tot = (ls: LeadView[]) => ({
       n: ls.length, q: ls.filter((l) => l.q).length, ct: ls.filter((l) => l.ct).length, ng: ls.filter((l) => l.ng).length,
@@ -52,8 +63,8 @@ export default function Dashboard({ leads, anteriores, campanhas, vendedores, pe
     const T = tot(sel), A = tot(ant);
 
     const funis = [
-      ...ADV_KEYS.map((k) => ({ id: k as FonteFiltro, nome: ADV[k].nome, cor: ADV[k].cor, t: tot(filtrar(leads, k)) })),
-      { id: "todos" as FonteFiltro, nome: "Todos", cor: NAVY, t: tot(filtrar(leads, "todos")) },
+      ...ADV_KEYS.map((k) => ({ id: k as FonteFiltro, nome: ADV[k].nome, cor: ADV[k].cor, t: tot(filtrar(leads, k)), gasto: somaG(filtrarG(gastos, k)) })),
+      { id: "todos" as FonteFiltro, nome: "Todos", cor: NAVY, t: tot(filtrar(leads, "todos")), gasto: somaG(filtrarG(gastos, "todos")) },
     ];
     const semAnuncio = leads.filter((l) => l.f === "sem" && (tipo === "todos" || l.t === tipo)).length;
     const anuncio = leads.filter((l) => l.f !== "sem");
@@ -119,7 +130,7 @@ export default function Dashboard({ leads, anteriores, campanhas, vendedores, pe
       cmap.set(l.k, c);
     }
     const camps = [...cmap.values()].sort((a, b) => b.n - a.n).slice(0, 25).map((c) => ({
-      ...c, info: campanhas[c.k], adv: Object.entries(c.adv).sort((a, b) => b[1] - a[1])[0]?.[0] as AdvKey,
+      ...c, info: campanhas[c.k], adv: Object.entries(c.adv).sort((a, b) => b[1] - a[1])[0]?.[0] as AdvKey, gasto: gastoPorCamp.get(c.k) ?? 0,
     }));
 
     // duplicados (mesmo telefone)
@@ -132,9 +143,9 @@ export default function Dashboard({ leads, anteriores, campanhas, vendedores, pe
     const dupExtras = [...contTel.values()].reduce((t, n) => t + Math.max(0, n - 1), 0);
     const dupCruzados = [...porTel.entries()].filter(([h, s]) => (contTel.get(h) ?? 0) > 1 && [...s].filter((x) => x !== "sem").length > 1).length;
 
-    return { T, A, funis, semAnuncio, anuncio: anuncio.length, provisorio, semTipo, vend, maxV, porUf, maxUf, ddds, semDdd, dias, linhas, ticksX, ticksY, X, perdas, maxP, camps, dupPessoas, dupExtras, dupCruzados };
+    return { gasto, gastoAnt, T, A, funis, semAnuncio, anuncio: anuncio.length, provisorio, semTipo, vend, maxV, porUf, maxUf, ddds, semDdd, dias, linhas, ticksX, ticksY, X, perdas, maxP, camps, dupPessoas, dupExtras, dupCruzados };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [leads, anteriores, fonte, tipo, mapa, campanhas, vendedores, periodo]);
+  }, [leads, anteriores, fonte, tipo, mapa, campanhas, vendedores, periodo, gastos, gastosAnt]);
 
   const delta = (a: number, b: number, dinheiro = false) => {
     if (!b) return a ? "sem base no período anterior" : "igual ao período anterior";
@@ -149,6 +160,12 @@ export default function Dashboard({ leads, anteriores, campanhas, vendedores, pe
     { label: "Vendas", valor: fmt(d.T.w), sub: "conversão " + pct(d.T.w, d.T.n) },
     { label: "Faturamento", valor: money(d.T.fat), sub: delta(d.T.fat, d.A.fat, true) },
     { label: "Ticket médio", valor: d.T.w ? money(d.T.fat / d.T.w) : "—", sub: "por venda" },
+    ...(gastos.length && fonte !== "sem" ? [
+      { label: "Investido no Meta", valor: money(d.gasto), sub: delta(d.gasto, d.gastoAnt, true) },
+      { label: "Custo por lead", valor: d.T.n ? money(d.gasto / d.T.n) : "—", sub: "investido ÷ leads" },
+      { label: "Custo por venda", valor: d.T.w ? money(d.gasto / d.T.w) : "—", sub: "investido ÷ vendas" },
+      { label: "Retorno (ROAS)", valor: roas(d.T.fat, d.gasto), sub: d.gasto ? "faturamento ÷ investido" : "sem investimento no período" },
+    ] : []),
   ];
   const fontes: [FonteFiltro, string][] = [["todos", "Todos"], ...ADV_KEYS.map((k) => [k, ADV[k].nome] as [FonteFiltro, string]), ["sem", "Sem anúncio"]];
 
@@ -197,7 +214,7 @@ export default function Dashboard({ leads, anteriores, campanhas, vendedores, pe
               ))}
             </div>
             {d.funis.map((fu) => (
-              <Funil3D key={fu.nome} nome={fu.nome} cor={fu.cor} f={[fu.t.n, fu.t.q, fu.t.ct, fu.t.ng, fu.t.w]} fat={fu.t.fat}
+              <Funil3D key={fu.nome} nome={fu.nome} cor={fu.cor} f={[fu.t.n, fu.t.q, fu.t.ct, fu.t.ng, fu.t.w]} fat={fu.t.fat} gasto={gastos.length ? fu.gasto : null}
                 on={fonte === "todos" || fonte === fu.id} />
             ))}
           </div>
@@ -323,8 +340,8 @@ export default function Dashboard({ leads, anteriores, campanhas, vendedores, pe
         </div>
         {d.camps.length === 0 ? <Vazio /> : (
           <div style={{ overflowX: "auto" }}>
-            <table className="tbl" style={{ minWidth: 760 }}>
-              <thead><tr><th>Campanha / anúncio</th><th>Anunciante</th><th>Tipo</th><th>Situação</th><th className="num">Leads</th><th className="num">Vendas</th><th className="num">Faturamento</th></tr></thead>
+            <table className="tbl" style={{ minWidth: 980 }}>
+              <thead><tr><th>Campanha / anúncio</th><th>Anunciante</th><th>Tipo</th><th>Situação</th><th className="num">Leads</th><th className="num">Vendas</th><th className="num">Faturamento</th>{gastos.length > 0 && <><th className="num">Investido</th><th className="num">Custo/lead</th><th className="num">ROAS</th></>}</tr></thead>
               <tbody>
                 {d.camps.map((c) => (
                   <tr key={c.k}>
@@ -338,6 +355,11 @@ export default function Dashboard({ leads, anteriores, campanhas, vendedores, pe
                     <td className="num">{fmt(c.n)}</td>
                     <td className="num">{fmt(c.w)}</td>
                     <td className="num">{money(c.fat)}</td>
+                    {gastos.length > 0 && <>
+                      <td className="num">{c.gasto ? money(c.gasto) : "—"}</td>
+                      <td className="num">{c.gasto && c.n ? money(c.gasto / c.n) : "—"}</td>
+                      <td className="num" style={{ fontWeight: 600, color: c.gasto && c.fat >= c.gasto ? "#146C3A" : undefined }}>{roas(c.fat, c.gasto)}</td>
+                    </>}
                   </tr>
                 ))}
               </tbody>
@@ -376,7 +398,7 @@ function Vazio() {
 
 const ALTURA_ETAPA = 56;
 
-function Funil3D({ nome, cor, f, fat, on }: { nome: string; cor: string; f: number[]; fat: number; on: boolean }) {
+function Funil3D({ nome, cor, f, fat, gasto, on }: { nome: string; cor: string; f: number[]; fat: number; gasto: number | null; on: boolean }) {
   // Largura mínima de 36% para o número sempre caber dentro da etapa; raiz quadrada para as etapas pequenas aparecerem.
   const width = (n: number) => (f[0] > 0 ? 36 + 64 * Math.sqrt(n / f[0]) : 36);
   const texto = { color: "#fff", textShadow: "0 1px 2px rgba(0,0,0,.45)", fontVariantNumeric: "tabular-nums" as const, lineHeight: 1.1 };
@@ -415,6 +437,12 @@ function Funil3D({ nome, cor, f, fat, on }: { nome: string; cor: string; f: numb
         <span style={{ color: "#5B6576" }}>Lead → venda <strong style={{ color: "#172033" }}>{pct(f[4], f[0])}</strong></span>
         <strong>{money(fat)}</strong>
       </div>
+      {gasto !== null && (
+        <div style={{ marginTop: 6, display: "flex", justifyContent: "space-between", gap: 8, fontSize: 12, color: "#5B6576" }}>
+          <span>Investido <strong style={{ color: "#172033" }}>{money(gasto)}</strong></span>
+          <span>ROAS <strong style={{ color: "#172033" }}>{roas(fat, gasto)}</strong></span>
+        </div>
+      )}
     </div>
   );
 }

@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import AoVivo from "@/components/AoVivo";
 import Dashboard from "@/components/Dashboard";
 import FiltroPeriodo from "@/components/FiltroPeriodo";
-import { carregarDonosMeta, carregarLeads, carregarRegistros, carregarVendedores, resolverPeriodo } from "@/lib/dados";
+import { carregarDonosMeta, carregarGastos, carregarLeads, carregarRegistros, carregarVendedores, resolverPeriodo } from "@/lib/dados";
 import { prisma } from "@/lib/db";
 import { ultimaSync } from "@/lib/sync";
 
@@ -15,11 +15,13 @@ export default async function Page({ params, searchParams }: PageProps<"/relator
   const sp = await searchParams;
   const { atual, anterior } = resolverPeriodo({ periodo: one(sp.periodo), de: one(sp.de), ate: one(sp.ate) });
   const [regs, donos] = await Promise.all([carregarRegistros(), carregarDonosMeta()]);
-  const [{ leads, campanhas }, ant, vendedores, sync] = await Promise.all([
+  const [{ leads, campanhas }, ant, vendedores, sync, gastos, gastosAnt] = await Promise.all([
     carregarLeads(atual.de, atual.ate, regs, donos),
     carregarLeads(anterior.de, anterior.ate, regs, donos),
     carregarVendedores(true),
     ultimaSync(),
+    carregarGastos(atual.de, atual.ate, regs),
+    carregarGastos(anterior.de, anterior.ate, regs),
   ]);
   return (
     <>
@@ -40,7 +42,7 @@ export default async function Page({ params, searchParams }: PageProps<"/relator
         <div style={{ display: "flex", justifyContent: "flex-end" }}>
           <FiltroPeriodo chave={atual.chave} de={atual.deStr} ate={atual.ateStr} />
         </div>
-        <Dashboard publico leads={leads} anteriores={ant.leads} campanhas={campanhas} vendedores={vendedores}
+        <Dashboard publico leads={leads} anteriores={ant.leads} campanhas={campanhas} vendedores={vendedores} gastos={gastos} gastosAnt={gastosAnt}
           periodo={{ de: atual.de, ate: atual.ate, rotulo: atual.rotulo }} ultimaSync={sync} />
       </main>
     </>

@@ -8,7 +8,7 @@ export type AnuncioView = {
   id: string; nome: string; status: string | null; thumb: string | null; titulo: string | null; texto: string | null;
   video: boolean; tipo: string | null; tipoNivel: "anuncio" | "conjunto" | "campanha" | null; n: Numeros;
 };
-export type ConjuntoView = { id: string; nome: string; status: string | null; tipo: string | null; anuncios: AnuncioView[]; n: Numeros };
+export type ConjuntoView = { id: string; nome: string; status: string | null; tipo: string | null; tipoProprio: string | null; anuncios: AnuncioView[]; n: Numeros };
 export type CampanhaView = { id: string; nome: string; status: string | null; objetivo: string | null; tipo: string | null; conjuntos: ConjuntoView[]; n: Numeros };
 export type ContaView = { id: string; nome: string; anunciante: AdvKey; ultimaSync: number | null; erro: string | null; campanhas: CampanhaView[]; n: Numeros };
 export type SemVinculo = { adId: string; campanhaId: string | null; leads: number; ultimo: number; provavel: AdvKey };
@@ -77,7 +77,7 @@ export async function carregarAnuncios(de: number, ate: number, filtroAdv: AdvKe
           };
         });
         somar(ncp, ns);
-        return { id: st.id, nome: st.nome, status: st.effectiveStatus ?? st.status, tipo: (regSet ?? regCamp)?.tipo ?? null, anuncios, n: ns };
+        return { id: st.id, nome: st.nome, status: st.effectiveStatus ?? st.status, tipo: (regSet ?? regCamp)?.tipo ?? null, tipoProprio: regSet?.tipo ?? null, anuncios, n: ns };
       });
       somar(nc, ncp);
       return { id: cp.id, nome: cp.nome, status: cp.effectiveStatus ?? cp.status, objetivo: cp.objetivo, tipo: regCamp?.tipo ?? null, conjuntos, n: ncp };

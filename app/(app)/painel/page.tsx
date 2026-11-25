@@ -1,6 +1,6 @@
 import Dashboard from "@/components/Dashboard";
 import FiltroPeriodo from "@/components/FiltroPeriodo";
-import { carregarDonosMeta, carregarLeads, carregarRegistros, carregarVendedores, resolverPeriodo } from "@/lib/dados";
+import { carregarDonosMeta, carregarGastos, carregarLeads, carregarRegistros, carregarVendedores, resolverPeriodo } from "@/lib/dados";
 import { exigirUsuario } from "@/lib/sessao";
 import { ultimaSync } from "@/lib/sync";
 
@@ -11,11 +11,13 @@ export default async function Page({ searchParams }: PageProps<"/painel">) {
   const sp = await searchParams;
   const { atual, anterior } = resolverPeriodo({ periodo: one(sp.periodo), de: one(sp.de), ate: one(sp.ate) });
   const [regs, donos] = await Promise.all([carregarRegistros(), carregarDonosMeta()]);
-  const [{ leads, campanhas }, ant, vendedores, sync] = await Promise.all([
+  const [{ leads, campanhas }, ant, vendedores, sync, gastos, gastosAnt] = await Promise.all([
     carregarLeads(atual.de, atual.ate, regs, donos),
     carregarLeads(anterior.de, anterior.ate, regs, donos),
     carregarVendedores(false),
     ultimaSync(),
+    carregarGastos(atual.de, atual.ate, regs),
+    carregarGastos(anterior.de, anterior.ate, regs),
   ]);
   return (
     <main className="container" style={{ padding: 24, display: "flex", flexDirection: "column", gap: 20 }}>
@@ -26,7 +28,7 @@ export default async function Page({ searchParams }: PageProps<"/painel">) {
         </div>
         <FiltroPeriodo chave={atual.chave} de={atual.deStr} ate={atual.ateStr} />
       </div>
-      <Dashboard leads={leads} anteriores={ant.leads} campanhas={campanhas} vendedores={vendedores}
+      <Dashboard leads={leads} anteriores={ant.leads} campanhas={campanhas} vendedores={vendedores} gastos={gastos} gastosAnt={gastosAnt}
         periodo={{ de: atual.de, ate: atual.ate, rotulo: atual.rotulo }} ultimaSync={sync} />
     </main>
   );
