@@ -75,7 +75,8 @@ export async function sincronizar(opcoes: { completo?: boolean } = {}): Promise<
       `/leads?limit=250&page=${page}&with=contacts,loss_reason&filter[pipeline_id]=${PIPELINE}&filter[updated_at][from]=${desde}&order[updated_at]=asc`,
     );
     const ls = r?._embedded?.leads ?? [];
-    alterados.push(...ls.filter((l) => l.created_at >= desdePadrao));
+    // leads criados desde SYNC_DESDE, e também os mais antigos que fecharam depois disso (a venda conta no mês em que fechou)
+    alterados.push(...ls.filter((l) => l.created_at >= desdePadrao || (l.closed_at ?? 0) >= desdePadrao));
     if (ls.length < 250) break;
   }
   for (const l of alterados) {

@@ -92,7 +92,7 @@ export default function Dashboard({ leads, anteriores, campanhas, vendedores, pe
     for (const g of filtrarG(gastos, fonte)) gastoPorCamp.set(g.k, (gastoPorCamp.get(g.k) ?? 0) + g.v);
     const ant = filtrar(anteriores, fonte);
     const tot = (ls: LeadView[]) => ({
-      n: ls.length, q: ls.filter((l) => l.q).length, ct: ls.filter((l) => l.ct).length, ng: ls.filter((l) => l.ng).length,
+      n: ls.filter((l) => !l.x).length, q: ls.filter((l) => l.q && !l.x).length, ct: ls.filter((l) => l.ct && !l.x).length, ng: ls.filter((l) => l.ng && !l.x).length,
       w: ls.filter((l) => l.w).length, fat: ls.reduce((t, l) => t + l.v, 0),
     });
     const T = tot(sel), A = tot(ant);
@@ -101,10 +101,12 @@ export default function Dashboard({ leads, anteriores, campanhas, vendedores, pe
       ...ADV_KEYS.map((k) => ({ id: k as FonteFiltro, nome: ADV[k].nome, cor: ADV[k].cor, t: tot(filtrar(leads, k)), gasto: somaG(filtrarG(gastos, k)) })),
       { id: "todos" as FonteFiltro, nome: "Todos", cor: NAVY, t: tot(filtrar(leads, "todos")), gasto: somaG(filtrarG(gastos, "todos")) },
     ];
-    const semAnuncio = leads.filter((l) => l.f === "sem" && (tipo === "todos" || l.t === tipo)).length;
-    const anuncio = leads.filter((l) => l.f !== "sem");
+    const semAnuncioLs = leads.filter((l) => l.f === "sem" && (tipo === "todos" || l.t === tipo));
+    const semAnuncio = semAnuncioLs.filter((l) => !l.x).length;
+    const fatSemAnuncio = semAnuncioLs.reduce((t, l) => t + l.v, 0), vendasSemAnuncio = semAnuncioLs.filter((l) => l.w).length;
+    const anuncio = leads.filter((l) => l.f !== "sem" && !l.x);
     const provisorio = anuncio.filter((l) => l.p).length;
-    const semTipo = sel.filter((l) => l.t === "?").length;
+    const semTipo = sel.filter((l) => l.t === "?" && !l.x).length;
 
     // vendedores
     const vmap = new Map<string, { nome: string; n: number; w: number; fat: number; porAdv: Record<string, number> }>();
@@ -112,8 +114,8 @@ export default function Dashboard({ leads, anteriores, campanhas, vendedores, pe
       const key = String(l.r ?? "x");
       const nome = l.r != null ? vendedores[l.r] ?? "Usuário removido" : "Sem responsável";
       const v = vmap.get(key) ?? { nome, n: 0, w: 0, fat: 0, porAdv: {} };
-      v.n++; if (l.w) { v.w++; v.fat += l.v; }
-      v.porAdv[l.f] = (v.porAdv[l.f] ?? 0) + 1;
+      if (!l.x) { v.n++; v.porAdv[l.f] = (v.porAdv[l.f] ?? 0) + 1; }
+      if (l.w) { v.w++; v.fat += l.v; }
       vmap.set(key, v);
     }
     const vend = [...vmap.values()].sort((a, b) => b.fat - a.fat || b.w - a.w || b.n - a.n);
@@ -123,6 +125,7 @@ export default function Dashboard({ leads, anteriores, campanhas, vendedores, pe
     const porUf = new Map<string, number>(), porDdd = new Map<string, number>();
     let semDdd = 0;
     for (const l of sel) {
+      if (mapa === "leads" && l.x) continue;
       const val = mapa === "leads" ? 1 : l.v;
       const uf = l.d ? DDD_UF[l.d] : undefined;
       if (!uf) { semDdd++; continue; }
@@ -137,7 +140,7 @@ export default function Dashboard({ leads, anteriores, campanhas, vendedores, pe
     for (let s = periodo.de; s < periodo.ate; s += 86400) dias.push(dia(s + 43200));
     const porDia = Object.fromEntries(ADV_KEYS.map((k) => [k, new Map<string, number>()])) as Record<AdvKey, Map<string, number>>;
     for (const l of leads) {
-      if (l.f === "sem" || (tipo !== "todos" && l.t !== tipo)) continue;
+      if (l.x || l.f === "sem" || (tipo !== "todos" && l.t !== tipo)) continue;
       const m = porDia[l.f as AdvKey]; const k = dia(l.c);
       m.set(k, (m.get(k) ?? 0) + 1);
     }
@@ -160,17 +163,17 @@ export default function Dashboard({ leads, anteriores, campanhas, vendedores, pe
     for (const l of sel) {
       if (!l.k) continue;
       const c = cmap.get(l.k) ?? { k: l.k, n: 0, w: 0, fat: 0, adv: {} };
-      c.n++; if (l.w) { c.w++; c.fat += l.v; }
-      c.adv[l.f] = (c.adv[l.f] ?? 0) + 1;
+      if (!l.x) { c.n++; c.adv[l.f] = (c.adv[l.f] ?? 0) + 1; }
+      if (l.w) { c.w++; c.fat += l.v; }
       cmap.set(l.k, c);
     }
-    const camps = [...cmap.values()].sort((a, b) => b.n - a.n).slice(0, 25).map((c) => ({
+    const camps = [...cmap.values()].filter((c) => c.n > 0 || c.w > 0).sort((a, b) => b.n - a.n).slice(0, 25).map((c) => ({
       ...c, info: campanhas[c.k], adv: Object.entries(c.adv).sort((a, b) => b[1] - a[1])[0]?.[0] as AdvKey, gasto: gastoPorCamp.get(c.k) ?? 0,
     }));
 
     // duplicados (mesmo telefone)
     const porTel = new Map<string, Set<string>>(), contTel = new Map<string, number>();
-    for (const l of leads) if (l.h) {
+    for (const l of leads) if (l.h && !l.x) {
       contTel.set(l.h, (contTel.get(l.h) ?? 0) + 1);
       porTel.set(l.h, (porTel.get(l.h) ?? new Set()).add(l.f));
     }
@@ -179,10 +182,11 @@ export default function Dashboard({ leads, anteriores, campanhas, vendedores, pe
     const dupCruzados = [...porTel.entries()].filter(([h, s]) => (contTel.get(h) ?? 0) > 1 && [...s].filter((x) => x !== "sem").length > 1).length;
 
     // atendimento (1ª resposta de uma pessoa, leads que chegaram em horário comercial)
-    const atTotal = atendimento(sel);
-    const atAdv = ADV_KEYS.map((k) => ({ k, a: atendimento(filtrar(leads, k)) }));
+    const atTotal = atendimento(sel.filter((l) => !l.x));
+    const atAdv = ADV_KEYS.map((k) => ({ k, a: atendimento(filtrar(leads, k).filter((l) => !l.x)) }));
     const amap = new Map<string, { nome: string; ls: LeadView[] }>();
     for (const l of sel) {
+      if (l.x) continue;
       const key = String(l.r ?? "x");
       const it = amap.get(key) ?? { nome: l.r != null ? vendedores[l.r] ?? "Usuário removido" : "Sem responsável", ls: [] };
       it.ls.push(l);
@@ -190,7 +194,7 @@ export default function Dashboard({ leads, anteriores, campanhas, vendedores, pe
     }
     const atVend = [...amap.values()].map((v) => ({ nome: v.nome, a: atendimento(v.ls) })).filter((v) => v.a.base > 0)
       .sort((a, b) => (a.a.med ?? Infinity) - (b.a.med ?? Infinity));
-    const atForaHorario = mediana(sel.filter((l) => !l.hc && l.fr != null).map((l) => l.fr!));
+    const atForaHorario = mediana(sel.filter((l) => !l.x && !l.hc && l.fr != null).map((l) => l.fr!));
 
     // motor × peça (respeita o anunciante, ignora o filtro de tipo)
     const selF = leads.filter((l) => (fonte === "todos" ? l.f !== "sem" : l.f === fonte));
@@ -198,12 +202,12 @@ export default function Dashboard({ leads, anteriores, campanhas, vendedores, pe
     const porTipo = (["motor", "peca", "?"] as const).map((t) => {
       const ls = selF.filter((l) => l.t === t);
       return {
-        t, n: ls.length, ct: ls.filter((l) => l.ct).length, w: ls.filter((l) => l.w).length, fat: ls.reduce((s, l) => s + l.v, 0),
+        t, n: ls.filter((l) => !l.x).length, ct: ls.filter((l) => l.ct && !l.x).length, w: ls.filter((l) => l.w).length, fat: ls.reduce((s, l) => s + l.v, 0),
         gasto: gF.filter((g) => g.t === t).reduce((s, g) => s + g.v, 0),
       };
     });
 
-    return { atTotal, atAdv, atVend, atForaHorario, porTipo, gasto, gastoAnt, T, A, funis, semAnuncio, anuncio: anuncio.length, provisorio, semTipo, vend, maxV, porUf, maxUf, ddds, semDdd, dias, linhas, ticksX, ticksY, X, perdas, maxP, camps, dupPessoas, dupExtras, dupCruzados };
+    return { fatSemAnuncio, vendasSemAnuncio, atTotal, atAdv, atVend, atForaHorario, porTipo, gasto, gastoAnt, T, A, funis, semAnuncio, anuncio: anuncio.length, provisorio, semTipo, vend, maxV, porUf, maxUf, ddds, semDdd, dias, linhas, ticksX, ticksY, X, perdas, maxP, camps, dupPessoas, dupExtras, dupCruzados };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [leads, anteriores, fonte, tipo, mapa, campanhas, vendedores, periodo, gastos, gastosAnt]);
 
@@ -218,7 +222,9 @@ export default function Dashboard({ leads, anteriores, campanhas, vendedores, pe
     { label: "Qualificados", valor: fmt(d.T.q), sub: pct(d.T.q, d.T.n) + " dos leads" },
     { label: "Chegaram à cotação", valor: fmt(d.T.ct), sub: pct(d.T.ct, d.T.n) + " dos leads" },
     { label: "Vendas", valor: fmt(d.T.w), sub: "conversão " + pct(d.T.w, d.T.n) },
-    { label: "Faturamento", valor: money(d.T.fat), sub: delta(d.T.fat, d.A.fat, true) },
+    { label: fonte === "todos" ? "Faturamento dos anúncios" : "Faturamento", valor: money(d.T.fat), sub: delta(d.T.fat, d.A.fat, true) },
+    ...(fonte === "todos" ? [{ label: "Faturamento total", valor: money(d.T.fat + d.fatSemAnuncio),
+      sub: `${fmt(d.T.w + d.vendasSemAnuncio)} vendas · inclui ${money(d.fatSemAnuncio)} sem anúncio` }] : []),
     { label: "Ticket médio", valor: d.T.w ? money(d.T.fat / d.T.w) : "—", sub: "por venda" },
     ...(gastos.length && fonte !== "sem" ? [
       { label: "Investido no Meta", valor: money(d.gasto), sub: delta(d.gasto, d.gastoAnt, true) },

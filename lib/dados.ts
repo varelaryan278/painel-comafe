@@ -21,6 +21,7 @@ export type LeadView = {
   pd: string | null; // motivo de perda
   k: string | null; // chave da campanha (id da campanha, ou do anúncio)
   h: string | null; // hash do telefone (duplicados)
+  x: boolean; // criado antes do período: entra só pela venda fechada no período
   fr: number | null; // segundos até a 1ª resposta de uma pessoa (null = ninguém respondeu)
   hc: boolean; // chegou em horário comercial
 };
@@ -90,7 +91,12 @@ export async function carregarDonosMeta() {
 }
 
 export async function carregarLeads(de: number, ate: number, regs: Map<string, RegistroMin>, donos?: Map<string, AdvKey>) {
-  const rows = await prisma.lead.findMany({ where: { createdAt: { gte: new Date(de * 1000), lt: new Date(ate * 1000) } } });
+  const ini = new Date(de * 1000), fim = new Date(ate * 1000);
+  const rows = await prisma.lead.findMany({
+    where: { OR: [{ createdAt: { gte: ini, lt: fim } }, { statusId: ST.GANHO, closedAt: { gte: ini, lt: fim } }] },
+  });
+  // venda conta no período em que FECHOU (sem data de fechamento, vale a última atualização)
+  const fechouNoPeriodo = (l: (typeof rows)[number]) => { const t = (l.closedAt ?? l.updatedAt).getTime(); return t >= ini.getTime() && t < fim.getTime(); };
   const chaves = [...new Set(rows.map((l) => l.campaignId ?? l.adId).filter((x): x is string => !!x))];
   const [nomesCamp, nomesAd] = await Promise.all([
     prisma.metaCampanha.findMany({ where: { id: { in: chaves } }, select: { id: true, nome: true, effectiveStatus: true } }),
@@ -118,8 +124,8 @@ export async function carregarLeads(de: number, ate: number, regs: Map<string, R
     return {
       c: Math.floor(l.createdAt.getTime() / 1000), f: a.fonte, p: a.provisorio, t: a.tipo,
       q: has(QUALIFICADO), ct: has(COTACAO), ng: has(NEGOCIACAO),
-      w: l.statusId === ST.GANHO, l: l.statusId === ST.PERDIDO, nr: l.statusId === ST.NAO_RESPONDE,
-      v: l.statusId === ST.GANHO ? l.price : 0, r: l.responsibleUserId, d: l.ddd, pd: l.statusId === ST.PERDIDO ? l.lossReason : null,
+      w: l.statusId === ST.GANHO && fechouNoPeriodo(l), l: l.statusId === ST.PERDIDO, nr: l.statusId === ST.NAO_RESPONDE,
+      v: l.statusId === ST.GANHO && fechouNoPeriodo(l) ? l.price : 0, x: l.createdAt < ini, r: l.responsibleUserId, d: l.ddd, pd: l.statusId === ST.PERDIDO ? l.lossReason : null,
       k, h: l.phoneHash && l.phoneHash !== "sem-telefone" ? l.phoneHash : null,
       fr: l.primeiraResposta ? Math.max(0, Math.round((l.primeiraResposta.getTime() - l.createdAt.getTime()) / 1000)) : null,
       hc: emHorarioComercial(l.createdAt),

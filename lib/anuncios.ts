@@ -27,8 +27,11 @@ export async function carregarAnuncios(de: number, ate: number, filtroAdv: AdvKe
     prisma.metaConjunto.findMany({ orderBy: { nome: "asc" } }),
     prisma.metaAnuncio.findMany({ orderBy: { criadoEm: "desc" } }),
     prisma.lead.findMany({
-      where: { createdAt: { gte: new Date(de * 1000), lt: new Date(ate * 1000) }, adId: { not: null } },
-      select: { adId: true, campaignId: true, statusId: true, stages: true, price: true, createdAt: true },
+      where: {
+        adId: { not: null },
+        OR: [{ createdAt: { gte: new Date(de * 1000), lt: new Date(ate * 1000) } }, { statusId: ST.GANHO, closedAt: { gte: new Date(de * 1000), lt: new Date(ate * 1000) } }],
+      },
+      select: { adId: true, campaignId: true, statusId: true, stages: true, price: true, createdAt: true, closedAt: true, updatedAt: true },
     }),
     prisma.metaGasto.groupBy({
       by: ["adId"], _sum: { gasto: true },
@@ -40,10 +43,13 @@ export async function carregarAnuncios(de: number, ate: number, filtroAdv: AdvKe
   for (const l of leads) {
     const n = porAd.get(l.adId!) ?? zero();
     const s = new Set([...l.stages, l.statusId]);
-    n.leads++;
-    if (COTACAO.some((x) => s.has(x))) n.cot++;
-    if (l.statusId === ST.GANHO) { n.vendas++; n.fat += l.price; }
-    n.ultimo = Math.max(n.ultimo ?? 0, Math.floor(l.createdAt.getTime() / 1000));
+    const criado = Math.floor(l.createdAt.getTime() / 1000), fechou = Math.floor((l.closedAt ?? l.updatedAt).getTime() / 1000);
+    if (criado >= de) { // leads e cotações pela data de entrada; venda pela data de fechamento
+      n.leads++;
+      if (COTACAO.some((x) => s.has(x))) n.cot++;
+      n.ultimo = Math.max(n.ultimo ?? 0, criado);
+    }
+    if (l.statusId === ST.GANHO && fechou >= de && fechou < ate) { n.vendas++; n.fat += l.price; }
     porAd.set(l.adId!, n);
   }
   for (const g of gastos) {
@@ -96,7 +102,7 @@ export async function carregarAnuncios(de: number, ate: number, filtroAdv: AdvKe
   const todosAds = new Set(ads.map((a) => a.id));
   const sv = new Map<string, SemVinculo>();
   for (const l of leads) {
-    if (todosAds.has(l.adId!)) continue;
+    if (todosAds.has(l.adId!) || l.createdAt.getTime() < de * 1000) continue;
     const x = sv.get(l.adId!) ?? { adId: l.adId!, campanhaId: l.campaignId, leads: 0, ultimo: 0, provavel: advPeloSufixo(l.adId!) };
     x.leads++;
     x.ultimo = Math.max(x.ultimo, Math.floor(l.createdAt.getTime() / 1000));
