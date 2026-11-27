@@ -49,6 +49,16 @@ export async function avisarAtualizacao(motivo: string) {
   bus.emit("atualizado", msg);
 }
 
+/** Estado das sincronizações (rodando / última / erro) para o indicador dos painéis. */
+export async function avisarStatus(status: unknown) {
+  const msg = JSON.stringify({ tipo: "status", status });
+  const r = pub();
+  if (r) {
+    try { await r.publish(CANAL, msg); return; } catch (e) { console.error("[eventos] publish falhou, usando aviso local:", (e as Error).message); }
+  }
+  bus.emit("atualizado", msg);
+}
+
 export function ouvirAtualizacoes(fn: (msg: string) => void) {
   iniciarAssinatura();
   bus.on("atualizado", fn);

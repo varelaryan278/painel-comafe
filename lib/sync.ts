@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { prisma } from "./db";
 import { avisarAtualizacao } from "./eventos";
+import { comStatus } from "./statusSync";
 
 // Sincronização Kommo → banco. Só LÊ o Kommo; nunca grava nada no CRM.
 
@@ -195,20 +196,7 @@ export async function ultimaSync() {
 // Evita duas sincronizações ao mesmo tempo no mesmo processo (webhook + botão + agendador).
 const g = globalThis as unknown as { __syncEmAndamento?: Promise<ResultadoSync> | null };
 export function sincronizarUmaVez(opcoes: { completo?: boolean } = {}) {
-  if (!g.__syncEmAndamento) {
-    g.__syncEmAndamento = sincronizar(opcoes)
-      .then(async (r) => {
-        await gravarEstado("kommo_ultima_ok", new Date().toISOString()).catch(() => {});
-        await prisma.syncState.deleteMany({ where: { key: "kommo_ultimo_erro" } }).catch(() => {});
-        return r;
-      })
-      .catch(async (e) => {
-        // guarda o erro para o aviso do painel (ex.: token expirado)
-        await gravarEstado("kommo_ultimo_erro", JSON.stringify({ msg: (e as Error).message, em: new Date().toISOString() })).catch(() => {});
-        throw e;
-      })
-      .finally(() => (g.__syncEmAndamento = null));
-  }
+  if (!g.__syncEmAndamento) g.__syncEmAndamento = comStatus("kommo", () => sincronizar(opcoes)).finally(() => (g.__syncEmAndamento = null));
   return g.__syncEmAndamento;
 }
 
@@ -222,13 +210,13 @@ export async function statusKommo(): Promise<StatusKommo> {
     const exp = payload ? Number(JSON.parse(Buffer.from(payload, "base64url").toString()).exp) : NaN;
     if (Number.isFinite(exp) && exp > 0) expiraEm = new Date(exp * 1000);
   } catch {}
-  const [ok, erro] = await Promise.all([lerEstado("kommo_ultima_ok"), lerEstado("kommo_ultimo_erro")]);
+  const [ok, erro] = await Promise.all([lerEstado("ultima_sync"), lerEstado("kommo_ultimo_erro")]);
   let erroObj: StatusKommo["erro"] = null;
   try { erroObj = erro ? JSON.parse(erro) : null; } catch {}
   return {
     expiraEm,
     dias: expiraEm ? Math.floor((expiraEm.getTime() - Date.now()) / 86_400_000) : null,
-    ultimaOk: ok ? new Date(ok) : null,
+    ultimaOk: ok ? new Date(Number(ok) * 1000) : null,
     erro: erroObj,
   };
 }

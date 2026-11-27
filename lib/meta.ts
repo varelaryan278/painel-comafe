@@ -2,6 +2,7 @@ import { ADV_KEYS, type AdvKey } from "./constantes";
 import { decifrar, provaSegredo } from "./cripto";
 import { prisma } from "./db";
 import { avisarAtualizacao } from "./eventos";
+import { comStatus } from "./statusSync";
 import { urlPublica } from "./url";
 
 // Leitura do Meta (Graph API) — somente leitura.
@@ -206,7 +207,7 @@ export async function sincronizarMeta(opcoes: { somenteContas?: string[] } = {})
 
 const g = globalThis as unknown as { __metaSync?: Promise<ResultadoMeta> | null };
 export function sincronizarMetaUmaVez() {
-  if (!g.__metaSync) g.__metaSync = sincronizarMeta().finally(() => (g.__metaSync = null));
+  if (!g.__metaSync) g.__metaSync = comStatus("meta", sincronizarMeta).finally(() => (g.__metaSync = null));
   return g.__metaSync;
 }
 
