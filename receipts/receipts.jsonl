@@ -63,3 +63,5 @@
 {"tool":"mcp__claude-in-chrome__read_console_messages","request_id":"tu-1795791358189-nuai","signed":false,"note":"signing initialization failed: key file not found at C:\\Users\\varel\\Documents\\GitHub\\comafe\\painel-comafe\\protect-mcp.key"}
 {"tool":"mcp__claude-in-chrome__navigate","request_id":"tu-1795791366839-ugmw","signed":false,"note":"signing initialization failed: key file not found at C:\\Users\\varel\\Documents\\GitHub\\comafe\\painel-comafe\\protect-mcp.key"}
 {"tool":"Bash","request_id":"tu-1795791374882-np6f","signed":false,"note":"signing initialization failed: key file not found at C:\\Users\\varel\\Documents\\GitHub\\comafe\\painel-comafe\\protect-mcp.key"}
+{"tool":"mcp__claude-in-chrome__read_console_messages","request_id":"tu-1795791392729-lefz","signed":false,"note":"signing initialization failed: key file not found at C:\\Users\\varel\\Documents\\GitHub\\comafe\\painel-comafe\\protect-mcp.key"}
+{"tool":"Bash","request_id":"tu-1795791406543-0azm","signed":false,"note":"signing initialization failed: key file not found at C:\\Users\\varel\\Documents\\GitHub\\comafe\\painel-comafe\\protect-mcp.key"}
