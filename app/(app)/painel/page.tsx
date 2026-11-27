@@ -11,7 +11,7 @@ export default async function Page({ searchParams }: PageProps<"/painel">) {
   const sp = await searchParams;
   const { atual, anterior } = resolverPeriodo({ periodo: one(sp.periodo), de: one(sp.de), ate: one(sp.ate) });
   const [regs, donos] = await Promise.all([carregarRegistros(), carregarDonosMeta()]);
-  const [{ leads, campanhas }, ant, vendedores, sync, gastos, gastosAnt] = await Promise.all([
+  const [{ leads, campanhas, semValor }, ant, vendedores, sync, gastos, gastosAnt] = await Promise.all([
     carregarLeads(atual.de, atual.ate, regs, donos),
     carregarLeads(anterior.de, anterior.ate, regs, donos),
     carregarVendedores(false),
@@ -29,7 +29,7 @@ export default async function Page({ searchParams }: PageProps<"/painel">) {
         <FiltroPeriodo chave={atual.chave} de={atual.deStr} ate={atual.ateStr} />
       </div>
       <Dashboard leads={leads} anteriores={ant.leads} campanhas={campanhas} vendedores={vendedores} gastos={gastos} gastosAnt={gastosAnt}
-        periodo={{ de: atual.de, ate: atual.ate, rotulo: atual.rotulo }} ultimaSync={sync} />
+        periodo={{ de: atual.de, ate: atual.ate, rotulo: atual.rotulo }} ultimaSync={sync} vendasSemValor={semValor} />
     </main>
   );
 }

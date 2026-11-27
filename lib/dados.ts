@@ -1,13 +1,15 @@
 import "server-only";
 import { atribuir, type RegistroMin } from "./atribuicao";
-import { COTACAO, NEGOCIACAO, QUALIFICADO, ST, type AdvKey, type Fonte, type TipoLead } from "./constantes";
+import { ADV_KEYS, COTACAO, NEGOCIACAO, QUALIFICADO, ST, type AdvKey, type Fonte, type TipoLead } from "./constantes";
 import { prisma } from "./db";
 
 /** Lead compacto enviado ao navegador — sem nome nem telefone de cliente. */
 export type LeadView = {
   c: number; // criado em (unix s)
   f: Fonte;
-  p: boolean; // atribuição provisória
+  p: boolean; // atribuição provisória (tem ID do Meta sem dono)
+  e: boolean; // sem ID do anúncio: dono estimado pelo número de WhatsApp (ou tag)
+  oa: AdvKey | null; // venda de pessoa que antes chegou por anúncio de OUTRO anunciante
   t: TipoLead;
   q: boolean; // qualificado
   ct: boolean; // chegou à cotação
@@ -104,8 +106,24 @@ export async function carregarLeads(de: number, ate: number, regs: Map<string, R
   ]);
   const nomeMeta = new Map([...nomesCamp, ...nomesAd].map((x) => [x.id, x]));
   const campanhas: Record<string, CampanhaInfo> = {};
+  // vendas: a mesma pessoa (telefone) já tinha chegado antes por anúncio de outro anunciante?
+  const hashesVenda = [...new Set(rows.filter((l) => l.statusId === ST.GANHO && l.phoneHash && l.phoneHash !== "sem-telefone").map((l) => l.phoneHash!))];
+  const anteriores = hashesVenda.length
+    ? await prisma.lead.findMany({ where: { phoneHash: { in: hashesVenda } }, select: { id: true, phoneHash: true, createdAt: true, adId: true, adsetId: true, campaignId: true, tags: true, sourceId: true } })
+    : [];
+  const historico = new Map<string, { id: number; c: number; f: string }[]>();
+  for (const o of anteriores) {
+    const f = atribuir(o, regs, donos).fonte;
+    historico.set(o.phoneHash!, [...(historico.get(o.phoneHash!) ?? []), { id: o.id, c: o.createdAt.getTime(), f }]);
+  }
+  const semValor: number[] = [];
   const leads: LeadView[] = rows.map((l) => {
     const a = atribuir({ adId: l.adId, adsetId: l.adsetId, campaignId: l.campaignId, tags: l.tags, sourceId: l.sourceId }, regs, donos);
+    const ganhou = l.statusId === ST.GANHO && fechouNoPeriodo(l);
+    if (ganhou && !l.price) semValor.push(l.id);
+    const outro = ganhou && ADV_KEYS.includes(a.fonte as AdvKey) && l.phoneHash
+      ? (historico.get(l.phoneHash) ?? []).find((o) => o.id !== l.id && o.c < l.createdAt.getTime() && o.f !== a.fonte && ADV_KEYS.includes(o.f as AdvKey))
+      : undefined;
     const st = new Set<number>(l.stages);
     st.add(l.statusId);
     const has = (lista: number[]) => lista.some((x) => st.has(x));
@@ -122,7 +140,7 @@ export async function carregarLeads(de: number, ate: number, regs: Map<string, R
       };
     }
     return {
-      c: Math.floor(l.createdAt.getTime() / 1000), f: a.fonte, p: a.provisorio, t: a.tipo,
+      c: Math.floor(l.createdAt.getTime() / 1000), f: a.fonte, p: a.provisorio, e: (a.origem === "canal" || a.origem === "tag") && a.fonte !== "nid", oa: (outro?.f as AdvKey) ?? null, t: a.tipo,
       q: has(QUALIFICADO), ct: has(COTACAO), ng: has(NEGOCIACAO),
       w: l.statusId === ST.GANHO && fechouNoPeriodo(l), l: l.statusId === ST.PERDIDO, nr: l.statusId === ST.NAO_RESPONDE,
       v: l.statusId === ST.GANHO && fechouNoPeriodo(l) ? l.price : 0, x: l.createdAt < ini, r: l.responsibleUserId, d: l.ddd, pd: l.statusId === ST.PERDIDO ? l.lossReason : null,
@@ -131,7 +149,7 @@ export async function carregarLeads(de: number, ate: number, regs: Map<string, R
       hc: emHorarioComercial(l.createdAt),
     };
   });
-  return { leads, campanhas };
+  return { leads, campanhas, semValor };
 }
 
 /** Investimento no Meta (contas conectadas) no período, por anúncio, já com dono e tipo. */

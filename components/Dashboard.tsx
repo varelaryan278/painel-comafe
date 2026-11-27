@@ -33,6 +33,7 @@ export type DashboardProps = {
   gastos?: GastoView[];
   gastosAnt?: GastoView[];
   publico?: boolean;
+  vendasSemValor?: number[]; // ids de leads ganhos sem valor preenchido (só admin/gestor)
   tv?: boolean; // modo TV: mostra uma tela por vez e troca sozinho
 };
 
@@ -67,7 +68,7 @@ const roas = (fat: number, gasto: number) => (gasto > 0 ? (fat / gasto).toLocale
 
 const dia = (s: number) => new Date(s * 1000).toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
 
-export default function Dashboard({ leads, anteriores, campanhas, vendedores, periodo, ultimaSync, gastos = [], gastosAnt = [], publico = false, tv = false }: DashboardProps) {
+export default function Dashboard({ leads, anteriores, campanhas, vendedores, periodo, ultimaSync, gastos = [], gastosAnt = [], publico = false, tv = false, vendasSemValor = [] }: DashboardProps) {
   const [fonte, setFonte] = useState<FonteFiltro>("todos");
   const [tipo, setTipo] = useState<TipoFiltro>("todos");
   const [mapa, setMapa] = useState<"leads" | "fat">("leads");
@@ -95,6 +96,8 @@ export default function Dashboard({ leads, anteriores, campanhas, vendedores, pe
     const tot = (ls: LeadView[]) => ({
       n: ls.filter((l) => !l.x).length, q: ls.filter((l) => l.q && !l.x).length, ct: ls.filter((l) => l.ct && !l.x).length, ng: ls.filter((l) => l.ng && !l.x).length,
       w: ls.filter((l) => l.w).length, fat: ls.reduce((t, l) => t + l.v, 0),
+      fatEst: ls.reduce((t, l) => t + (l.e ? l.v : 0), 0), // sem ID: dono pelo número de WhatsApp
+      fatCruz: ls.reduce((t, l) => t + (l.oa ? l.v : 0), 0), wCruz: ls.filter((l) => l.w && l.oa).length, // já tinha vindo por outro anunciante
     });
     const T = tot(sel), A = tot(ant);
 
@@ -232,7 +235,7 @@ export default function Dashboard({ leads, anteriores, campanhas, vendedores, pe
     { label: fonte === "todos" ? "Faturamento dos anúncios" : fonte === "sem" ? "Faturamento por fora" : fonte === "nid" ? "Faturamento de anúncio sem ID" : "Faturamento de " + ADV[fonte].nome, valor: money(d.T.fat),
       sub: `${fmt(d.T.w)} vendas · ${pct(d.T.fat, d.fatKommo)} do Kommo`,
       lado: { label: "Faturamento no Kommo", valor: money(d.fatKommo), sub: `${fmt(d.vendasKommo)} vendas · todas as origens` },
-      rodape: `Anúncios ${delta(d.T.fat, d.A.fat, true)}` },
+      rodape: `Anúncios ${delta(d.T.fat, d.A.fat, true)}` + (d.T.fat && fonte !== "sem" && fonte !== "nid" ? ` · ${money(d.T.fat - d.T.fatEst)} confirmado por ID do anúncio · ${money(d.T.fatEst)} estimado pelo número de WhatsApp` + (d.T.fatCruz ? ` · ${money(d.T.fatCruz)} (${fmt(d.T.wCruz)} venda${d.T.wCruz === 1 ? "" : "s"}) de clientes que antes vieram por outro anunciante` : "") : "") },
     { label: "Ticket médio", valor: d.T.w ? money(d.T.fat / d.T.w) : "—", sub: "por venda" },
     ...(gastos.length && fonte !== "sem" && fonte !== "nid" ? [
       { label: "Investido no Meta", valor: money(d.gasto), sub: delta(d.gasto, d.gastoAnt, true) },
@@ -250,6 +253,16 @@ export default function Dashboard({ leads, anteriores, campanhas, vendedores, pe
           <strong>{pct(d.provisorio, d.anuncio)} dos leads de anúncio com atribuição provisória</strong>
           <span>Vieram de IDs do Meta que nenhum gestor cadastrou ainda; o painel usou a regra do final do ID.</span>
           <Link href="/ids" className="btn" style={{ marginLeft: "auto", height: 34, display: "inline-flex", alignItems: "center", textDecoration: "none" }}>Ver IDs sem dono</Link>
+        </div>
+      )}
+
+      {!publico && vendasSemValor.length > 0 && (
+        <div className="aviso">
+          <strong>{fmt(vendasSemValor.length)} venda{vendasSemValor.length === 1 ? "" : "s"} sem valor no Kommo</strong>
+          <span>Marcada{vendasSemValor.length === 1 ? "" : "s"} como ganho sem “Valor de venda”, então não entra{vendasSemValor.length === 1 ? "" : "m"} no faturamento:</span>
+          <span style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {vendasSemValor.map((id) => <a key={id} href={`https://comafeoficial.kommo.com/leads/detail/${id}`} target="_blank" rel="noreferrer" className="mono">#{id}</a>)}
+          </span>
         </div>
       )}
 
@@ -318,8 +331,19 @@ export default function Dashboard({ leads, anteriores, campanhas, vendedores, pe
             ))}
           </div>
         </div>
+        {d.funis.some((fu) => fu.id !== "todos" && fu.t.fat) && (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 20px", fontSize: 12, color: "#3B4556" }}>
+            <strong>Faturamento:</strong>
+            {d.funis.filter((fu) => fu.id !== "todos").map((fu) => (
+              <span key={fu.nome}>
+                <span className="dot" style={{ background: fu.cor }} />{fu.nome}: {money(fu.t.fat - fu.t.fatEst)} por ID + {money(fu.t.fatEst)} estimado pelo número
+                {fu.t.fatCruz ? <> · {money(fu.t.fatCruz)} com contato prévio de outro anunciante</> : null}
+              </span>
+            ))}
+          </div>
+        )}
         <p className="muted" style={{ fontSize: 12 }}>
-          Fora dos funis: <strong>{fmt(d.semAnuncio)}</strong> leads criados à mão pelos vendedores (vendas por fora: balcão, telefone, indicação). Leads que entraram pelo WhatsApp sem ID do anúncio contam como “Anúncio (sem ID)”.
+          Fora dos funis: <strong>{fmt(d.semAnuncio)}</strong> leads criados à mão pelos vendedores (vendas por fora: balcão, telefone, indicação). Leads que entraram pelo WhatsApp sem ID do anúncio contam para o dono do número (estimado).
         </p>
       </section>}
 
