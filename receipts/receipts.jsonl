@@ -70,3 +70,4 @@
 {"tool":"Bash","request_id":"tu-1795791455506-17op","signed":false,"note":"signing initialization failed: key file not found at C:\\Users\\varel\\Documents\\GitHub\\comafe\\painel-comafe\\protect-mcp.key"}
 {"tool":"mcp__claude-in-chrome__navigate","request_id":"tu-1795791463137-3ufe","signed":false,"note":"signing initialization failed: key file not found at C:\\Users\\varel\\Documents\\GitHub\\comafe\\painel-comafe\\protect-mcp.key"}
 {"tool":"mcp__claude-in-chrome__computer","request_id":"tu-1795791468099-t7dn","signed":false,"note":"signing initialization failed: key file not found at C:\\Users\\varel\\Documents\\GitHub\\comafe\\painel-comafe\\protect-mcp.key"}
+{"tool":"Bash","request_id":"tu-1795791485272-pdej","signed":false,"note":"signing initialization failed: key file not found at C:\\Users\\varel\\Documents\\GitHub\\comafe\\painel-comafe\\protect-mcp.key"}
