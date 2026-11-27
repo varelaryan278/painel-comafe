@@ -15,6 +15,13 @@ export const ADV: Record<AdvKey, { nome: string; cor: string }> = {
   marcos: { nome: "Marcos", cor: "#B4501A" },
   matra: { nome: "Matra", cor: "#0F7F6E" },
 };
+// Canal de WhatsApp do Kommo (source_id) → anunciante, para leads que chegam sem ID do anúncio.
+// Conferido em nov/2026: em cada canal, os leads COM ID são quase todos do mesmo anunciante.
+export const CANAL_DONO: Record<number, AdvKey> = {
+  15944: "marcos", // Comafe Autopeças
+  16016: "alex", // Comafe Distribuidora Diesel
+  17218: "matra", // Comafe Distribuidora de Peças
+};
 export const SEM = { nome: "Sem anúncio (venda por fora)", cor: "#8A94A6" };
 export const NID = { nome: "Anúncio (sem ID)", cor: "#6B4FA8" };
 

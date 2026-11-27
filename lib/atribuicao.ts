@@ -1,4 +1,4 @@
-import type { AdvKey, Fonte, Situacao, Tipo, TipoLead } from "./constantes";
+import { CANAL_DONO, type AdvKey, type Fonte, type Situacao, type Tipo, type TipoLead } from "./constantes";
 
 export type RegistroMin = { metaId: string; nivel: string; nome: string; anunciante: string; tipo: string; situacao: string };
 export type LeadMin = { adId: string | null; adsetId: string | null; campaignId: string | null; tags: string[]; sourceId?: number | null };
@@ -46,9 +46,12 @@ export function atribuir(lead: LeadMin, regs: Map<string, RegistroMin>, donosMet
   if (meta) return { fonte: meta, provisorio: false, tipo, registro: reg, origem: "meta" };
   if (reg) return { fonte: reg.anunciante as AdvKey, provisorio: false, tipo, registro: reg, origem: "cadastro" };
   if (lead.adId) return { fonte: advPeloSufixo(lead.adId), provisorio: true, tipo, registro: null, origem: "sufixo" };
+  // sem ID do anúncio: o número de WhatsApp por onde entrou diz de quem é (mais confiável que as tags do robô)
+  const porCanal = lead.sourceId ? CANAL_DONO[lead.sourceId] : undefined;
+  if (porCanal) return { fonte: porCanal, provisorio: true, tipo, registro: null, origem: "canal" };
   const porTag = advPelasTags(lead.tags);
   if (porTag) return { fonte: porTag, provisorio: true, tipo, registro: null, origem: "tag" };
-  // entrou por um canal (WhatsApp) sem ID do anúncio: conta como anúncio, sem saber de quem
+  // entrou por um canal (WhatsApp) desconhecido sem ID do anúncio: conta como anúncio, sem saber de quem
   if (lead.sourceId) return { fonte: "nid", provisorio: false, tipo, registro: null, origem: "canal" };
   // criado à mão pelo vendedor: venda por fora
   return { fonte: "sem", provisorio: false, tipo, registro: null, origem: "nenhuma" };
