@@ -46,7 +46,7 @@ Stack: Next.js 16 · Prisma 7 + PostgreSQL · Better Auth · ioredis.
 - **Automática:** enquanto o servidor estiver no ar, sincroniza a cada `SYNC_INTERVALO_MIN` minutos (padrão 10).
 - **Manual:** botão “Sincronizar agora” (admin), `npm run sync`, ou `POST /api/sync` com o cabeçalho `x-sync-secret`.
 - `npm run sync -- --completo` refaz tudo desde `SYNC_DESDE`.
-- O token do Kommo **vence em 26/11/2026**. Quando vencer, a sincronização para e o painel avisa; gere outro e atualize `KOMMO_TOKEN`.
+- O token do Kommo **vence em 04/03/2027**. O admin vê um aviso no topo do painel 30 dias antes, e também se o token expirar ou se a sincronização falhar. Gere outro e atualize `KOMMO_TOKEN` (no Easypanel, e reinicie o serviço).
 
 ## Anúncios do Meta
 
